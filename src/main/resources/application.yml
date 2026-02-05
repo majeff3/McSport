@@ -1,0 +1,105 @@
+spring:
+  application:
+    name: McSport
+
+  devtools:
+    restart:
+      enabled: false
+
+  servlet:
+    multipart:
+      enabled: true
+      # 单个文件大小
+      max-file-size: 10MB
+      # 设置总上传的文件大小
+      max-request-size: 100MB
+      file-size-threshold: 10MB
+
+  datasource:
+    sql-server:
+      #driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+      jdbc-url: jdbc:sqlserver://116.205.180.81:40033;database=ASTY;encrypt=true;trustServerCertificate=true
+      username: sa
+      password: 2wsx#EDC+_opi
+
+    mariadb:
+      #driver-class-name: org.mariadb.jdbc.MariaDbDriver
+      jdbc-url: jdbc:mariadb://localhost:3306/mc_sport
+      username: remote_jeff
+      password: '!IuTas@BN8ioi&dsufbER'
+
+  jpa:
+    mariadb:
+      hibernate:
+        ddl-auto: update
+      show-sql: true
+      database-platform: org.hibernate.dialect.MariaDBDialect
+
+    sqlserver:
+      hibernate:
+        ddl-auto: update
+      show-sql: true
+      database-platform: org.hibernate.dialect.SQLServerDialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+# Actuator 配置 (可選,用於監控)
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露所有端點
+        include: "*"
+      base-path: /actuator
+
+  endpoint:
+    health:
+      show-details: always
+
+  httpexchanges:
+    recording:
+      enabled: true
+  # HTTP 請求追蹤
+
+upload:
+  path: images/
+
+# 日誌配置
+logging:
+  level:
+    # 根日誌級別
+    root: INFO
+
+    # 顯示所有 Web 請求
+    org.springframework.web: INFO
+    org.springframework.web.servlet.mvc.method.annotation: TRACE
+
+    # 顯示 SQL 語句
+    org.hibernate.SQL: INFO
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+  file:
+    path: logs/
+
+# App Properties
+app:
+  jwt:
+    secret: =============SG9x1jkxf=ji2GHfk+sSlkso2=5================== #${APP_JWT_SECRET}
+    expirationMs: 86400000 #${APP_JWT_EXPIRES}
+
+server:
+  address: 0.0.0.0
+  port: 8082
+
+cos:
+  common:
+    secretId: AKID35uVfeQxPhmdGgv1yiHfpMhpiNr9ymUA
+    secretKey: a0HOJnsnY8fFm7JYlndJlz2ua4KPHzUo
+    bucketName: mc-sports-bucket-1400106610
+    region: ap-guangzhou
+    reimbursementPath: reimbursement_system/
+    imagePath: images/
+    pdfPath: PDFs/
