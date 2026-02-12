@@ -116,6 +116,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             temp.put("updatedDate", expenseRecord.getUpdatedDate());
             temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
             temp.put("pdfPath", expenseRecord.getPdfPath());
+            temp.put("reviewComment", expenseRecord.getReviewComment());
             //temp.put("imageURLs", expenseRecord.getAttachmentPath());
             if(expenseRecord.getExpenseType().contains("速遞費")){
                 temp.put("shippingNumber", expenseRecord.getShippingNumber());
@@ -187,10 +188,17 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     }
 
     @Override
-    public Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status) {
+    public Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status, String review_comment) {
+
+        Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
+        if (!authorities.stream().anyMatch(grantedAuthority
+                -> Objects.equals(grantedAuthority.getAuthority(), "ROLE_ADMIN"))){
+            return "Unauthorized";
+        }
 
         ExpenseRecord expenseRecord = expenseRecordRepository.findExpenseRecordById(reimbursement_id);
         expenseRecord.setStatus(status);
+        expenseRecord.setReviewComment(review_comment);
         expenseRecord.setUpdatedDate(Instant.now());
         expenseRecordRepository.save(expenseRecord);
         return "success";
@@ -270,7 +278,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             return "Failed to find reimbursement: " + reimbursement_id;
         }
 
-        if(!expenseRecord.getStatus().equals("pending")){
+        if(!expenseRecord.getStatus().equals("pending")&&!expenseRecord.getStatus().equals("rejected")){
             return "The reimbursement has been pended!";
         }
 
@@ -336,10 +344,11 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         headerRow.createCell(8).setCellValue("備注");
         headerRow.createCell(9).setCellValue("更新時間");
         headerRow.createCell(10).setCellValue("銷售訂單編號");
-        headerRow.createCell(11).setCellValue("附件");
+        headerRow.createCell(11).setCellValue("審查評語");
+        headerRow.createCell(12).setCellValue("附件");
 
         // 定義圖片列的起始索引 (第10列，索引為9)
-        final int ATTACHMENT_COL_INDEX = 11;
+        final int ATTACHMENT_COL_INDEX = 12;
         int rowNum = 1;
         // 創建 CreationHelper (用於後續創建 Anchor)
         CreationHelper helper = workbook.getCreationHelper();
@@ -359,15 +368,20 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             row.createCell(8).setCellValue(expenseRecord.getRemarks());
             row.createCell(9).setCellValue(expenseRecord.getUpdatedDate().toString());
             row.createCell(10).setCellValue(""+expenseRecord.getSalesOrderId());
+            row.createCell(11).setCellValue(expenseRecord.getReviewComment());
 
             List<Map<String, String>> imageData = imageUtil.getBase64Image(expenseRecord.getAttachmentPath(), cosConfig, cosClient);
             int i = 0;
             for(Map<String, String> image : imageData){
-                insertImageToExcel(workbook, sheet, drawing, helper, image, row.getRowNum(), ATTACHMENT_COL_INDEX + i);
+                try {
+                    insertImageToExcel(workbook, sheet, drawing, helper, image, row.getRowNum(), ATTACHMENT_COL_INDEX + i);
 
-                // 設置列寬，讓圖片能顯示出來 (設置為20個字符寬)
-                sheet.setColumnWidth(ATTACHMENT_COL_INDEX + i, 30 * 256);
-                i++;
+                    // 設置列寬，讓圖片能顯示出來 (設置為20個字符寬)
+                    sheet.setColumnWidth(ATTACHMENT_COL_INDEX + i, 30 * 256);
+                    i++;
+                }catch (Exception e){
+                    //todo: 完善報錯
+                }
             }
         }
         return workbook;

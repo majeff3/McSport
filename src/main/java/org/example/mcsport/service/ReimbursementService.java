@@ -17,7 +17,7 @@ public interface ReimbursementService {
 
     Object appendImage(Long reimbursement_id, MultipartFile[] file, String attachment_path);
 
-    Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status);
+    Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status, String review_comment);
 
     Object getReimbursementByUser(Long user_id, Instant start_date, Instant end_date,
                                   Integer page, Integer page_size, String status);

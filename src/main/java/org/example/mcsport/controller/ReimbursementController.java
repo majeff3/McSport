@@ -14,11 +14,13 @@ import org.example.mcsport.util.ImageUtil;
 import org.example.mcsport.util.PdfUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -89,7 +91,7 @@ public class ReimbursementController {
     @PostMapping("/changeReimbursementStatus")
     public ResponseEntity<Object> changeReimbursementStatus(@RequestBody ChangeReimbursementStatusReq req){
         String user_name = SecurityContextHolder.getContext().getAuthentication().getName();
-        return ResponseEntity.ok(reimbursementService.changeReimbursementStatus(req.getReimbursement_id(), user_name, req.getStatus()));
+        return ResponseEntity.ok(reimbursementService.changeReimbursementStatus(req.getReimbursement_id(), user_name, req.getStatus(), req.getReview_comment()));
     }
 
     @PostMapping("/getReimbursementByUser")
@@ -158,7 +160,8 @@ public class ReimbursementController {
                     .contentType(MediaType.parseMediaType("application/vnd.ms-excel"))
                     .body(base64String);
         }catch (Exception e){
-            return ResponseEntity.notFound().build();
+            //throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR);
+            return ResponseEntity.notFound().eTag(e.getMessage()).build();
         }
     }
 

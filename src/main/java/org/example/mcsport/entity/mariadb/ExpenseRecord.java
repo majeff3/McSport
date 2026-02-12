@@ -75,5 +75,8 @@ public class ExpenseRecord {
     @Column(name = "pdf_path")
     private String pdfPath;
 
+    @Column(name = "review_comment", length = 500)
+    private String reviewComment;
+
 
 }
