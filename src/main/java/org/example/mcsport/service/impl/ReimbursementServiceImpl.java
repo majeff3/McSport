@@ -350,14 +350,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         headerRow.createCell(3).setCellValue("速遞單號");
         headerRow.createCell(4).setCellValue("速遞公司");
         headerRow.createCell(5).setCellValue("金額");
-        headerRow.createCell(6).setCellValue("報銷人");
-        headerRow.createCell(7).setCellValue("記錄人");
-        headerRow.createCell(8).setCellValue("審核狀態");
-        headerRow.createCell(9).setCellValue("費用日期");
-        headerRow.createCell(10).setCellValue("備注");
-        headerRow.createCell(11).setCellValue("更新時間");
-        headerRow.createCell(12).setCellValue("銷售訂單編號");
-        headerRow.createCell(13).setCellValue("審查評語");
+        headerRow.createCell(6).setCellValue("幣種");
+        headerRow.createCell(7).setCellValue("報銷人");
+        headerRow.createCell(8).setCellValue("記錄人");
+        headerRow.createCell(9).setCellValue("審核狀態");
+        headerRow.createCell(10).setCellValue("費用日期");
+        headerRow.createCell(11).setCellValue("備注");
+        headerRow.createCell(12).setCellValue("更新時間");
+        headerRow.createCell(13).setCellValue("銷售訂單編號");
+        headerRow.createCell(14).setCellValue("審查評語");
         //headerRow.createCell(12).setCellValue("附件");
 
         // 定義圖片列的起始索引 (第10列，索引為9)
@@ -376,14 +377,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             row.createCell(3).setCellValue(expenseRecord.getShippingNumber());
             row.createCell(4).setCellValue(expenseRecord.getShipCompany());
             row.createCell(5).setCellValue(expenseRecord.getExpenseAmount().toString());
-            row.createCell(6).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
-            row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
-            row.createCell(8).setCellValue(statusMap.get(expenseRecord.getStatus()));
-            row.createCell(9).setCellValue(expenseRecord.getExpenseDate().toString());
-            row.createCell(10).setCellValue(expenseRecord.getRemarks());
-            row.createCell(11).setCellValue(expenseRecord.getUpdatedDate().toString());
-            row.createCell(12).setCellValue(""+expenseRecord.getSalesOrderId());
-            row.createCell(13).setCellValue(expenseRecord.getReviewComment());
+            row.createCell(6).setCellValue(expenseRecord.getCurrency());
+            row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
+            row.createCell(8).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
+            row.createCell(9).setCellValue(statusMap.get(expenseRecord.getStatus()));
+            row.createCell(10).setCellValue(expenseRecord.getExpenseDate().toString());
+            row.createCell(11).setCellValue(expenseRecord.getRemarks());
+            row.createCell(12).setCellValue(expenseRecord.getUpdatedDate().toString());
+            row.createCell(13).setCellValue(""+expenseRecord.getSalesOrderId());
+            row.createCell(14).setCellValue(expenseRecord.getReviewComment());
 
             /*List<Map<String, String>> imageData = imageUtil.getBase64Image(expenseRecord.getAttachmentPath(), cosConfig, cosClient);
             int i = 0;
