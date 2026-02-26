@@ -18,6 +18,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.netty.udp.UdpServer;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -195,8 +196,11 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                 -> Objects.equals(grantedAuthority.getAuthority(), "ROLE_ADMIN"))){
             return "Unauthorized";
         }
+        ExpenseRecord expenseRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if(expenseRecord == null){
+            return "Expense record not exist!";
+        }
 
-        ExpenseRecord expenseRecord = expenseRecordRepository.findExpenseRecordById(reimbursement_id);
         expenseRecord.setStatus(status);
         expenseRecord.setReviewComment(review_comment);
         expenseRecord.setUpdatedDate(Instant.now());
@@ -301,6 +305,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         expenseRecord.setExpenseDate(expense_date);
         expenseRecord.setUpdatedDate(Instant.now());
         expenseRecord.setRecorder(user_id);
+        expenseRecord.setStatus("pending");
 
         //快遞單相關
         expenseRecord.setShippingNumber(shipping_number);
@@ -313,11 +318,17 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     }
 
     @Override
-    public Workbook exportExcel(Instant start_time, Instant end_time, String status, String company, Long user_id) throws Exception {
+    public Workbook exportExcel(Instant start_time, Instant end_time, String status, String company, Long user_id) {
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
         if (authorities.stream().anyMatch(grantedAuthority
                 -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"))){
             user_id = null;
+        }
+
+        List<UserTab> allUSer = userRepository.findAll();
+        Map<Long, UserTab> idMapUserTab = new HashMap<>();
+        for(UserTab userTab : allUSer){
+            idMapUserTab.put(userTab.getId(),userTab);
         }
 
         Map<String, String> statusMap = new HashMap<>();
@@ -333,19 +344,21 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         Sheet sheet = workbook.createSheet("報銷單");
         // 创建标题行
         Row headerRow = sheet.createRow(0);
-        headerRow.createCell(0).setCellValue("公司名稱");
-        headerRow.createCell(1).setCellValue("費用類型");
-        headerRow.createCell(2).setCellValue("速遞單號");
-        headerRow.createCell(3).setCellValue("速遞公司");
-        headerRow.createCell(4).setCellValue("金額");
-        headerRow.createCell(5).setCellValue("報銷人");
-        headerRow.createCell(6).setCellValue("審核狀態");
-        headerRow.createCell(7).setCellValue("費用日期");
-        headerRow.createCell(8).setCellValue("備注");
-        headerRow.createCell(9).setCellValue("更新時間");
-        headerRow.createCell(10).setCellValue("銷售訂單編號");
-        headerRow.createCell(11).setCellValue("審查評語");
-        headerRow.createCell(12).setCellValue("附件");
+        headerRow.createCell(0).setCellValue("ID");
+        headerRow.createCell(1).setCellValue("公司名稱");
+        headerRow.createCell(2).setCellValue("費用類型");
+        headerRow.createCell(3).setCellValue("速遞單號");
+        headerRow.createCell(4).setCellValue("速遞公司");
+        headerRow.createCell(5).setCellValue("金額");
+        headerRow.createCell(6).setCellValue("報銷人");
+        headerRow.createCell(7).setCellValue("記錄人");
+        headerRow.createCell(8).setCellValue("審核狀態");
+        headerRow.createCell(9).setCellValue("費用日期");
+        headerRow.createCell(10).setCellValue("備注");
+        headerRow.createCell(11).setCellValue("更新時間");
+        headerRow.createCell(12).setCellValue("銷售訂單編號");
+        headerRow.createCell(13).setCellValue("審查評語");
+        //headerRow.createCell(12).setCellValue("附件");
 
         // 定義圖片列的起始索引 (第10列，索引為9)
         final int ATTACHMENT_COL_INDEX = 12;
@@ -357,20 +370,22 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
         for(ExpenseRecord expenseRecord : allExpense){
             Row row = sheet.createRow(rowNum++);
-            row.createCell(0).setCellValue(expenseRecord.getCompanyName());
-            row.createCell(1).setCellValue(expenseRecord.getExpenseType());
-            row.createCell(2).setCellValue(expenseRecord.getShippingNumber());
-            row.createCell(3).setCellValue(expenseRecord.getShipCompany());
-            row.createCell(4).setCellValue(expenseRecord.getExpenseAmount().toString());
-            row.createCell(5).setCellValue(expenseRecord.getHandler());
-            row.createCell(6).setCellValue(statusMap.get(expenseRecord.getStatus()));
-            row.createCell(7).setCellValue(expenseRecord.getExpenseDate().toString());
-            row.createCell(8).setCellValue(expenseRecord.getRemarks());
-            row.createCell(9).setCellValue(expenseRecord.getUpdatedDate().toString());
-            row.createCell(10).setCellValue(""+expenseRecord.getSalesOrderId());
-            row.createCell(11).setCellValue(expenseRecord.getReviewComment());
+            row.createCell(0).setCellValue(expenseRecord.getId());
+            row.createCell(1).setCellValue(expenseRecord.getCompanyName());
+            row.createCell(2).setCellValue(expenseRecord.getExpenseType());
+            row.createCell(3).setCellValue(expenseRecord.getShippingNumber());
+            row.createCell(4).setCellValue(expenseRecord.getShipCompany());
+            row.createCell(5).setCellValue(expenseRecord.getExpenseAmount().toString());
+            row.createCell(6).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
+            row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
+            row.createCell(8).setCellValue(statusMap.get(expenseRecord.getStatus()));
+            row.createCell(9).setCellValue(expenseRecord.getExpenseDate().toString());
+            row.createCell(10).setCellValue(expenseRecord.getRemarks());
+            row.createCell(11).setCellValue(expenseRecord.getUpdatedDate().toString());
+            row.createCell(12).setCellValue(""+expenseRecord.getSalesOrderId());
+            row.createCell(13).setCellValue(expenseRecord.getReviewComment());
 
-            List<Map<String, String>> imageData = imageUtil.getBase64Image(expenseRecord.getAttachmentPath(), cosConfig, cosClient);
+            /*List<Map<String, String>> imageData = imageUtil.getBase64Image(expenseRecord.getAttachmentPath(), cosConfig, cosClient);
             int i = 0;
             for(Map<String, String> image : imageData){
                 try {
@@ -382,7 +397,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                 }catch (Exception e){
                     //todo: 完善報錯
                 }
-            }
+            }*/
         }
         return workbook;
     }
