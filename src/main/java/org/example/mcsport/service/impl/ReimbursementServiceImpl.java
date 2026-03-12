@@ -51,6 +51,13 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     public Object addReimbursement(String sales_order_id, String company_name, String expense_type,
                                    Double expense_amount, String currency, Long handler, String remarks,
                                    Instant expense_date, Long user_id, String shipping_number, String ship_company){
+
+        Map<String, Object> result = new HashMap<>();
+        if(expenseRecordRepository.existsExpenseRecordByShippingNumber(shipping_number)){
+            result.put("message","Shipping number already exists");
+            return result;
+        }
+
         ExpenseRecord expenseRecord = new ExpenseRecord();
         expenseRecord.setExpenseType(expense_type);
         expenseRecord.setExpenseAmount(new BigDecimal(expense_amount));
@@ -71,7 +78,6 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         expenseRecord.setShipCompany(ship_company);
 
         ExpenseRecord savedExpenseRecord = expenseRecordRepository.save(expenseRecord);
-        Map<String, Object> result = new HashMap<>();
         result.put("reimbursement_id",savedExpenseRecord.getId());
         return result;
     }
@@ -457,6 +463,62 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     @Override
     public Object getPDF(String file_path) throws IOException{
         return pdfUtil.getBase64Pdf(file_path, cosConfig, cosClient);
+    }
+
+    @Override
+    public Object searchReimbursement(String search_text, Integer page, Integer page_size, Long user_id) {
+        int offset = (page-1) * page_size;
+        Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
+        if (authorities.stream().anyMatch(grantedAuthority
+                -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"))){
+            user_id = null;
+        }
+
+        List<UserTab> allUSer = userRepository.findAll();
+        Map<Long, UserTab> idMapUserTab = new HashMap<>();
+        for(UserTab userTab : allUSer){
+            idMapUserTab.put(userTab.getId(),userTab);
+        }
+        List<UserTab> userTabList = userRepository.findAll();
+        Map<Long, UserTab> idMapUser = new HashMap<>();
+        for(UserTab userTab : userTabList){
+            idMapUser.put(userTab.getId(), userTab);
+        }
+
+        Long total = expenseRecordRepository.countSearchRecord(user_id, search_text);
+
+        List<ExpenseRecord> expenseRecordList = expenseRecordRepository.searchExpenseRecordByShippingNumberAndSalesOrderId(user_id,page_size,offset,search_text);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", total);
+        List<Object> reimbursements =  new ArrayList<>();
+        for (ExpenseRecord expenseRecord : expenseRecordList){
+            Map<String, Object> temp = new HashMap<>();
+            temp.put("attachmentPath", expenseRecord.getAttachmentPath());
+            temp.put("companyName", expenseRecord.getCompanyName());
+            temp.put("currency", expenseRecord.getCurrency());
+            temp.put("expenseAmount", expenseRecord.getExpenseAmount());
+            temp.put("expenseDate", expenseRecord.getExpenseDate());
+            temp.put("expenseType", expenseRecord.getExpenseType());
+            temp.put("handler", idMapUser.get(expenseRecord.getHandler()).getName());
+            temp.put("id", expenseRecord.getId());
+            temp.put("remarks", expenseRecord.getRemarks());
+            temp.put("salesOrderId", expenseRecord.getSalesOrderId());
+            temp.put("status", expenseRecord.getStatus());
+            temp.put("updatedDate", expenseRecord.getUpdatedDate());
+            temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
+            temp.put("pdfPath", expenseRecord.getPdfPath());
+            temp.put("reviewComment", expenseRecord.getReviewComment());
+            //temp.put("imageURLs", expenseRecord.getAttachmentPath());
+            if(expenseRecord.getExpenseType().contains("速遞費")){
+                temp.put("shippingNumber", expenseRecord.getShippingNumber());
+                temp.put("shippingCompany", expenseRecord.getShipCompany());
+            }
+            reimbursements.add(temp);
+        }
+        result.put("reimbursements",reimbursements);
+        return result;
+
     }
 
     private void insertImageToExcel(Workbook workbook, Sheet sheet, Drawing<?> drawing, CreationHelper helper, Map<String, String> imageData, int row, int col) throws IOException {

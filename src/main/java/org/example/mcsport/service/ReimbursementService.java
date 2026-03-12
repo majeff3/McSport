@@ -36,4 +36,6 @@ public interface ReimbursementService {
     Object appendPDF(Long reimbursement_id, MultipartFile[] file, String pdf_path);
 
     Object getPDF(String file_path) throws IOException;
+
+    Object searchReimbursement(String search_text, Integer page, Integer page_size, Long user_id);
 }

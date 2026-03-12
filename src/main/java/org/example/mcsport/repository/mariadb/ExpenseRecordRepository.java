@@ -73,4 +73,24 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
                                                           @Param("handler") Long user_id);
 
     List<ExpenseRecord> findAllByStatus(String status);
+
+    @Query(nativeQuery = true, value =
+            " SELECT * FROM expense_records AS er " +
+            " WHERE MATCH(shipping_number, sales_order_id) AGAINST (:search_text) " +
+            " AND (:handler IS NULL OR er.handler = :handler) " +
+            " ORDER BY er.created_date DESC" +
+            " LIMIT :page_size OFFSET :offset; ")
+    List<ExpenseRecord> searchExpenseRecordByShippingNumberAndSalesOrderId(@Param("handler") Long handler,
+                                                                           @Param("page_size") int page_size,
+                                                                           @Param("offset") int offset,
+                                                                           @Param("search_text") String search_text);
+
+    @Query(nativeQuery = true, value =
+            " SELECT count(*) FROM expense_records AS er " +
+            " WHERE MATCH(shipping_number, sales_order_id) AGAINST (:search_text) " +
+            " AND (:handler IS NULL OR er.handler = :handler) ")
+    Long countSearchRecord(@Param("handler") Long handler,
+                           @Param("search_text") String search_text);
+
+    boolean existsExpenseRecordByShippingNumber(String shippingNumber);
 }

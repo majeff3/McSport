@@ -68,6 +68,13 @@ public class ReimbursementController {
                 user_id , req.getHandler(), req.getStatus(), req.getPage(), req.getPage_size(), req.getCompany()));
     }
 
+    @PreAuthorize("hasRole('USER')")
+    @PostMapping("/searchReimbursement")
+    public ResponseEntity<Object> searchReimbursement(@RequestBody SearchReimbursementReq req){
+        Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
+        return ResponseEntity.ok(reimbursementService.searchReimbursement(req.getSearch_text(), req.getPage(), req.getPage_size(), user_id));
+    }
+
     @PostMapping("/getImage")
     public ResponseEntity<Object> getImage(@RequestBody GetImageReq req){
         /*
