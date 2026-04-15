@@ -26,6 +26,7 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.List;
 
@@ -387,7 +388,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
             row.createCell(8).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
             row.createCell(9).setCellValue(statusMap.get(expenseRecord.getStatus()));
-            row.createCell(10).setCellValue(expenseRecord.getExpenseDate().toString());
+            String expenseDate = String.valueOf(expenseRecord.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai")));
+            row.createCell(10).setCellValue(expenseDate);
             row.createCell(11).setCellValue(expenseRecord.getRemarks());
             row.createCell(12).setCellValue(expenseRecord.getUpdatedDate().toString());
             row.createCell(13).setCellValue(""+expenseRecord.getSalesOrderId());
