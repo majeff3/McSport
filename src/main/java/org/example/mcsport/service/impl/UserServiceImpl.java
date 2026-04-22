@@ -39,18 +39,28 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Object login(String login_name, String password) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(login_name, password));
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = jwtUtils.generateJwtToken(authentication);
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-
-        UserTab userTab = userRepository.findById(userDetails.getId()).orElse(null);
-        Map<String, Object> result = new HashMap<>();
-        if(userTab==null){
-            result.put("msg","Error in userTab!!");
+        // 先檢查用戶是否存在
+        UserTab userTab = userRepository.findUserTabByName(login_name).orElse(null);
+        if (userTab == null) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("msg", "用戶名不存在");
             return result;
         }
+
+        // 再驗證密碼
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        if (!encoder.matches(password, userTab.getPassword())) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("msg", "密碼錯誤");
+            return result;
+        }
+
+        // 手動構建 Authentication
+        UserDetailsImpl userDetails = UserDetailsImpl.build(userTab);
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        String jwt = jwtUtils.generateJwtToken(authentication);
 
         userTab.setLastLoginTime(Instant.now());
         userRepository.save(userTab);
@@ -58,8 +68,9 @@ public class UserServiceImpl implements UserService {
         String redisKey = "login_token:" + userDetails.getId();
         redisTemplate.opsForValue().set(redisKey, jwt, 1, TimeUnit.DAYS);
 
+        Map<String, Object> result = new HashMap<>();
         result.put("jwt", jwt);
-        result.put("author_level",userTab.getRoles());
+        result.put("author_level", userTab.getRoles());
         result.put("user_name", userTab.getName());
         return result;
     }
