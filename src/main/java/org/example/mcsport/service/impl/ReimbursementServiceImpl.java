@@ -11,6 +11,7 @@ import org.example.mcsport.entity.mariadb.UserTab;
 import org.example.mcsport.repository.mariadb.ExpenseRecordRepository;
 import org.example.mcsport.repository.mariadb.UserRepository;
 import org.example.mcsport.service.ReimbursementService;
+import org.example.mcsport.service.impl.jwt.UserDetailsImpl;
 import org.example.mcsport.util.ImageUtil;
 import org.example.mcsport.util.PdfUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -209,6 +210,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         }
 
         expenseRecord.setStatus(status);
+        Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
+        expenseRecord.setReviewer(user_id.toString());
         expenseRecord.setReviewComment(review_comment);
         expenseRecord.setUpdatedDate(Instant.now());
         expenseRecordRepository.save(expenseRecord);
@@ -227,7 +230,38 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         BigDecimal totalAmountCNY = new BigDecimal(0);
         BigDecimal totalAmountHKD = new BigDecimal(0);
         BigDecimal totalAmountUSD = new BigDecimal(0);
+
+        List<UserTab> userTabList = userRepository.findAll();
+        Map<Long, UserTab> idMapUser = new HashMap<>();
+        for(UserTab userTab : userTabList){
+            idMapUser.put(userTab.getId(), userTab);
+        }
+
+        List<Object> reimbursements =  new ArrayList<>();
         for (ExpenseRecord expenseRecord: expenseRecordList){
+            Map<String, Object> temp = new HashMap<>();
+            temp.put("attachmentPath", expenseRecord.getAttachmentPath());
+            temp.put("companyName", expenseRecord.getCompanyName());
+            temp.put("currency", expenseRecord.getCurrency());
+            temp.put("expenseAmount", expenseRecord.getExpenseAmount());
+            temp.put("expenseDate", expenseRecord.getExpenseDate());
+            temp.put("expenseType", expenseRecord.getExpenseType());
+            temp.put("handler", idMapUser.get(expenseRecord.getHandler()).getName());
+            temp.put("id", expenseRecord.getId());
+            temp.put("remarks", expenseRecord.getRemarks());
+            temp.put("salesOrderId", expenseRecord.getSalesOrderId());
+            temp.put("status", expenseRecord.getStatus());
+            temp.put("updatedDate", expenseRecord.getUpdatedDate());
+            temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
+            temp.put("pdfPath", expenseRecord.getPdfPath());
+            temp.put("reviewComment", expenseRecord.getReviewComment());
+            //temp.put("imageURLs", expenseRecord.getAttachmentPath());
+            if(expenseRecord.getExpenseType().contains("速遞費")){
+                temp.put("shippingNumber", expenseRecord.getShippingNumber());
+                temp.put("shippingCompany", expenseRecord.getShipCompany());
+            }
+            reimbursements.add(temp);
+
             switch (expenseRecord.getCurrency()){
                 case "MOP":
                     totalAmountMOP = totalAmountMOP.add(expenseRecord.getExpenseAmount());
@@ -244,7 +278,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             }
         }
         Map<String, Object> result = new HashMap<>();
-        result.put("reimbursement", expenseRecordList);
+        result.put("reimbursement", reimbursements);
         result.put("total_amount_MOP", totalAmountMOP);
         result.put("total_amount_CNY", totalAmountCNY);
         result.put("total_amount_HKD", totalAmountHKD);
