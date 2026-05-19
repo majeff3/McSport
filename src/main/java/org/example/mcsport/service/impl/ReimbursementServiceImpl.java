@@ -422,7 +422,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
             row.createCell(8).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
             row.createCell(9).setCellValue(statusMap.get(expenseRecord.getStatus()));
-            String expenseDate = String.valueOf(expenseRecord.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai")));
+            String expenseDate = String.valueOf(expenseRecord.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai"))).substring(0,9);
             row.createCell(10).setCellValue(expenseDate);
             row.createCell(11).setCellValue(expenseRecord.getRemarks());
             row.createCell(12).setCellValue(expenseRecord.getUpdatedDate().toString());
