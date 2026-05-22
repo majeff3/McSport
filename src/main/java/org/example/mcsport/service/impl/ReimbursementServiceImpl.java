@@ -11,33 +11,20 @@ import org.example.mcsport.entity.mariadb.UserTab;
 import org.example.mcsport.repository.mariadb.ExpenseRecordRepository;
 import org.example.mcsport.repository.mariadb.UserRepository;
 import org.example.mcsport.service.ReimbursementService;
-import org.example.mcsport.service.impl.jwt.UserDetailsImpl;
-import org.example.mcsport.util.ImageUtil;
-import org.example.mcsport.util.PdfUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import reactor.netty.udp.UdpServer;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.List;
 
 @Service
 public class ReimbursementServiceImpl implements ReimbursementService {
-    @Autowired
-    private ImageUtil imageUtil;
-    @Autowired
-    private PdfUtil pdfUtil;
-
     @Autowired
     private COSClient cosClient;
     @Autowired
@@ -49,14 +36,75 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     @Resource
     private UserRepository userRepository;
 
+    // ==================== 新流程：上傳/刪除附件 ====================
+
+    @Override
+    public Object uploadAttachment(MultipartFile file, String type) {
+        Map<String, Object> result = new HashMap<>();
+        if (file == null || file.isEmpty()) {
+            result.put("message", "file is empty");
+            return result;
+        }
+        try {
+            String subPath = "image".equals(type)
+                    ? cosConfig.getImagePath()
+                    : cosConfig.getPdfPath();
+
+            String originalName = Objects.requireNonNull(file.getOriginalFilename());
+            String ext = originalName.substring(originalName.lastIndexOf("."));
+            String filePath = subPath + System.currentTimeMillis() + "/" + UUID.randomUUID() + ext;
+
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(file.getSize());
+            metadata.setContentType(file.getContentType());
+
+            cosClient.putObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() + filePath, file.getInputStream(), metadata);
+
+            result.put("file_path", filePath);
+            return result;
+        } catch (IOException e) {
+            throw new RuntimeException("讀取上傳文件失敗", e);
+        }
+    }
+
+    @Override
+    public Object deleteAttachment(String filePath) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (filePath == null || filePath.isEmpty()) {
+                result.put("message", "file_path is empty");
+                return result;
+            }
+            cosClient.deleteObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() + filePath);
+            result.put("message", "success");
+        } catch (Exception e) {
+            result.put("message", "delete failed: " + e.getMessage());
+        }
+        return result;
+    }
+
+    @Override
+    public byte[] getImageBytes(String filePath) throws IOException {
+        return cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + filePath);
+    }
+
+    @Override
+    public byte[] getPdfBytes(String filePath) throws IOException {
+        return cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + filePath);
+    }
+
+    // ==================== 報銷單 CRUD ====================
+
     @Override
     public Object addReimbursement(String sales_order_id, String company_name, String expense_type,
                                    Double expense_amount, String currency, Long handler, String remarks,
-                                   Instant expense_date, Long user_id, String shipping_number, String ship_company){
+                                   Instant expense_date, Long user_id, String shipping_number, String ship_company,
+                                   String attachment_path, String pdf_path) {
 
         Map<String, Object> result = new HashMap<>();
-        if(expenseRecordRepository.existsExpenseRecordByShippingNumber(shipping_number)){
-            result.put("message","Shipping number already exists");
+        if (shipping_number != null && !shipping_number.isEmpty()
+                && expenseRecordRepository.existsExpenseRecordByShippingNumber(shipping_number)) {
+            result.put("message", "Shipping number already exists");
             return result;
         }
 
@@ -70,147 +118,50 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         expenseRecord.setCompanyName(company_name);
         expenseRecord.setSalesOrderId(sales_order_id);
         expenseRecord.setExpenseDate(expense_date);
-        expenseRecord.setAttachmentPath("");
+        expenseRecord.setAttachmentPath(attachment_path != null ? attachment_path : "");
+        expenseRecord.setPdfPath(pdf_path != null ? pdf_path : "");
         expenseRecord.setStatus("pending");
         expenseRecord.setUpdatedDate(Instant.now());
         expenseRecord.setCreatedDate(Instant.now());
-
-        //快遞單相關
         expenseRecord.setShippingNumber(shipping_number);
         expenseRecord.setShipCompany(ship_company);
 
-        ExpenseRecord savedExpenseRecord = expenseRecordRepository.save(expenseRecord);
-        result.put("reimbursement_id",savedExpenseRecord.getId());
+        ExpenseRecord saved = expenseRecordRepository.save(expenseRecord);
+        result.put("reimbursement_id", saved.getId());
         return result;
     }
 
     @Override
     public Object getReimbursement(Instant start_time, Instant end_time, Long user_id, Long handler,
                                    String status, Integer page, Integer page_size, String company) {
-        int offset = (page-1) * page_size;
+        int offset = (page - 1) * page_size;
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
-        if (authorities.stream().anyMatch(grantedAuthority
-                -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"))){
+        if (authorities.stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
             user_id = handler;
         }
 
-        List<ExpenseRecord> expenseRecordList = expenseRecordRepository.findExpenseRecordByTimeAndStatus
-                (status, page_size, offset, start_time, end_time, company, user_id);
+        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByTimeAndStatus(status, page_size, offset, start_time, end_time, company, user_id);
+        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_time, end_time, company, user_id);
 
-        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween
-                (status, start_time, end_time, company, user_id);
-
-        List<UserTab> userTabList = userRepository.findAll();
-        Map<Long, UserTab> idMapUser = new HashMap<>();
-        for(UserTab userTab : userTabList){
-            idMapUser.put(userTab.getId(), userTab);
-        }
-
+        Map<Long, UserTab> userMap = getUserMap();
         Map<String, Object> result = new HashMap<>();
         result.put("total", total);
-        List<Object> reimbursements =  new ArrayList<>();
-        for (ExpenseRecord expenseRecord : expenseRecordList){
-            Map<String, Object> temp = new HashMap<>();
-            temp.put("attachmentPath", expenseRecord.getAttachmentPath());
-            temp.put("companyName", expenseRecord.getCompanyName());
-            temp.put("currency", expenseRecord.getCurrency());
-            temp.put("expenseAmount", expenseRecord.getExpenseAmount());
-            temp.put("expenseDate", expenseRecord.getExpenseDate());
-            temp.put("expenseType", expenseRecord.getExpenseType());
-            temp.put("handler", idMapUser.get(expenseRecord.getHandler()).getName());
-            temp.put("id", expenseRecord.getId());
-            temp.put("remarks", expenseRecord.getRemarks());
-            temp.put("salesOrderId", expenseRecord.getSalesOrderId());
-            temp.put("status", expenseRecord.getStatus());
-            temp.put("updatedDate", expenseRecord.getUpdatedDate());
-            temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
-            temp.put("pdfPath", expenseRecord.getPdfPath());
-            temp.put("reviewComment", expenseRecord.getReviewComment());
-            //temp.put("imageURLs", expenseRecord.getAttachmentPath());
-            if(expenseRecord.getExpenseType().contains("速遞費")){
-                temp.put("shippingNumber", expenseRecord.getShippingNumber());
-                temp.put("shippingCompany", expenseRecord.getShipCompany());
-            }
-            reimbursements.add(temp);
-        }
-        result.put("reimbursements",reimbursements);
+        result.put("reimbursements", buildReimbursementList(list, userMap));
         return result;
     }
 
     @Override
-    public Object appendImage(Long reimbursement_id, MultipartFile[] file, String attachment_path) {
-        ExpenseRecord expenseRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
-        if(expenseRecord == null){
-            return "Expense record not exist!";
-        }
-        String allFilePath ="";
-
-        if (file != null) {
-            for(MultipartFile multipartFile : file){
-                if(multipartFile.isEmpty()){continue;}
-                String filePath =
-                        cosConfig.getImagePath() +
-                        System.currentTimeMillis() + "/" +
-                        UUID.randomUUID() +
-                        Objects.requireNonNull(multipartFile.getOriginalFilename()).
-                                substring(multipartFile.getOriginalFilename().lastIndexOf("."));
-                try{
-                    ObjectMetadata metadata = new ObjectMetadata();
-                    metadata.setContentLength(multipartFile.getSize()); // 必须设置长度，否则部分实现会回退到临时文件
-                    metadata.setContentType(multipartFile.getContentType());
-                    InputStream inputStream = multipartFile.getInputStream();
-                    cosClient.putObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() +filePath, inputStream, metadata);
-                    allFilePath+=filePath+";";
-                }catch (IOException e){
-                    throw new RuntimeException("读取上传文件失败", e);
-                }catch (NullPointerException e) {
-                    throw new RuntimeException("图片名不能为空", e);
-                }
-
-                /*try {
-                    // 获取保存路径的绝对路径
-                    Path path = Paths.get("images/" +filePath);
-                    // 确保目录存在
-                    Files.createDirectories(path.getParent());
-                    // 保存文件
-                    Files.copy(multipartFile.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
-                    allFilePath+=filePath+";";
-                }catch (IOException e) {
-                    e.printStackTrace();
-                    return "Failed to upload file: " + e.getMessage();
-                }*/
-            }
-            allFilePath = allFilePath.substring(0,allFilePath.length()-1);
-        }
-        String total = "";
-
-        if(!allFilePath.isEmpty()&&!attachment_path.isEmpty()){
-            total = attachment_path+";"+allFilePath;
-        } else if (!allFilePath.isEmpty()) {
-            total=allFilePath;
-        }else if (!attachment_path.isEmpty()){
-            total = attachment_path;
-        }
-        expenseRecord.setAttachmentPath(total);
-        expenseRecord.setUpdatedDate(Instant.now());
-        return "success " + expenseRecordRepository.save(expenseRecord).getId();
-    }
-
-    @Override
     public Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status, String review_comment) {
-
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
-        if (!authorities.stream().anyMatch(grantedAuthority
-                -> Objects.equals(grantedAuthority.getAuthority(), "ROLE_ADMIN"))){
+        if (!authorities.stream().anyMatch(a -> Objects.equals(a.getAuthority(), "ROLE_ADMIN"))) {
             return "Unauthorized";
         }
         ExpenseRecord expenseRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
-        if(expenseRecord == null){
+        if (expenseRecord == null) {
             return "Expense record not exist!";
         }
-
         expenseRecord.setStatus(status);
-        Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
+        Long user_id = ((org.example.mcsport.service.impl.jwt.UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
         expenseRecord.setReviewer(user_id.toString());
         expenseRecord.setReviewComment(review_comment);
         expenseRecord.setUpdatedDate(Instant.now());
@@ -221,68 +172,30 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     @Override
     public Object getReimbursementByUser(Long user_id, Instant start_date, Instant end_date,
                                          Integer page, Integer page_size, String status) {
-        int offset = (page-1) * page_size;
-        List<ExpenseRecord> expenseRecordList = expenseRecordRepository.findExpenseRecordByHandlerWithTime
-                (user_id, start_date, end_date, page_size, offset, status);
-
+        int offset = (page - 1) * page_size;
+        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByHandlerWithTime(user_id, start_date, end_date, page_size, offset, status);
         Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_date, end_date, null, user_id);
-        BigDecimal totalAmountMOP = new BigDecimal(0);
-        BigDecimal totalAmountCNY = new BigDecimal(0);
-        BigDecimal totalAmountHKD = new BigDecimal(0);
-        BigDecimal totalAmountUSD = new BigDecimal(0);
 
-        List<UserTab> userTabList = userRepository.findAll();
-        Map<Long, UserTab> idMapUser = new HashMap<>();
-        for(UserTab userTab : userTabList){
-            idMapUser.put(userTab.getId(), userTab);
-        }
+        BigDecimal totalMOP = BigDecimal.ZERO, totalCNY = BigDecimal.ZERO, totalHKD = BigDecimal.ZERO, totalUSD = BigDecimal.ZERO;
+        Map<Long, UserTab> userMap = getUserMap();
 
-        List<Object> reimbursements =  new ArrayList<>();
-        for (ExpenseRecord expenseRecord: expenseRecordList){
-            Map<String, Object> temp = new HashMap<>();
-            temp.put("attachmentPath", expenseRecord.getAttachmentPath());
-            temp.put("companyName", expenseRecord.getCompanyName());
-            temp.put("currency", expenseRecord.getCurrency());
-            temp.put("expenseAmount", expenseRecord.getExpenseAmount());
-            temp.put("expenseDate", expenseRecord.getExpenseDate());
-            temp.put("expenseType", expenseRecord.getExpenseType());
-            temp.put("handler", idMapUser.get(expenseRecord.getHandler()).getName());
-            temp.put("id", expenseRecord.getId());
-            temp.put("remarks", expenseRecord.getRemarks());
-            temp.put("salesOrderId", expenseRecord.getSalesOrderId());
-            temp.put("status", expenseRecord.getStatus());
-            temp.put("updatedDate", expenseRecord.getUpdatedDate());
-            temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
-            temp.put("pdfPath", expenseRecord.getPdfPath());
-            temp.put("reviewComment", expenseRecord.getReviewComment());
-            //temp.put("imageURLs", expenseRecord.getAttachmentPath());
-            if(expenseRecord.getExpenseType().contains("速遞費")){
-                temp.put("shippingNumber", expenseRecord.getShippingNumber());
-                temp.put("shippingCompany", expenseRecord.getShipCompany());
-            }
+        List<Object> reimbursements = new ArrayList<>();
+        for (ExpenseRecord er : list) {
+            Map<String, Object> temp = buildReimbursementMap(er, userMap);
             reimbursements.add(temp);
-
-            switch (expenseRecord.getCurrency()){
-                case "MOP":
-                    totalAmountMOP = totalAmountMOP.add(expenseRecord.getExpenseAmount());
-                    break;
-                case "CNY":
-                    totalAmountCNY = totalAmountCNY.add(expenseRecord.getExpenseAmount());
-                    break;
-                case "HKD":
-                    totalAmountHKD = totalAmountHKD.add(expenseRecord.getExpenseAmount());
-                    break;
-                case "USD":
-                    totalAmountUSD = totalAmountUSD.add(expenseRecord.getExpenseAmount());
-                    break;
+            switch (er.getCurrency()) {
+                case "MOP": totalMOP = totalMOP.add(er.getExpenseAmount()); break;
+                case "CNY": totalCNY = totalCNY.add(er.getExpenseAmount()); break;
+                case "HKD": totalHKD = totalHKD.add(er.getExpenseAmount()); break;
+                case "USD": totalUSD = totalUSD.add(er.getExpenseAmount()); break;
             }
         }
         Map<String, Object> result = new HashMap<>();
         result.put("reimbursement", reimbursements);
-        result.put("total_amount_MOP", totalAmountMOP);
-        result.put("total_amount_CNY", totalAmountCNY);
-        result.put("total_amount_HKD", totalAmountHKD);
-        result.put("total_amount_USD", totalAmountUSD);
+        result.put("total_amount_MOP", totalMOP);
+        result.put("total_amount_CNY", totalCNY);
+        result.put("total_amount_HKD", totalHKD);
+        result.put("total_amount_USD", totalUSD);
         result.put("total_pages", total);
         return result;
     }
@@ -290,23 +203,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     @Override
     public Object countAllPending() {
         List<ExpenseRecord> allPending = expenseRecordRepository.findAllByStatus("pending");
-        BigDecimal totalAmount = new BigDecimal(0);
-        for(ExpenseRecord expenseRecord : allPending){
-            BigDecimal currency = new BigDecimal(1);
-            switch (expenseRecord.getCurrency()){
-                case "MOP":break;
-                case "HKD":
-                    currency = new BigDecimal(1.01);
-                    break;
-                case "CNY":
-                    currency = new BigDecimal(1.10);
-                    break;
-                case "USD":
-                    currency = new BigDecimal(8);
-                    break;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (ExpenseRecord er : allPending) {
+            BigDecimal rate = BigDecimal.ONE;
+            switch (er.getCurrency()) {
+                case "HKD": rate = new BigDecimal("1.01"); break;
+                case "CNY": rate = new BigDecimal("1.10"); break;
+                case "USD": rate = new BigDecimal("8"); break;
             }
-            BigDecimal temp = expenseRecord.getExpenseAmount().multiply(currency);
-            totalAmount = totalAmount.add(temp);
+            totalAmount = totalAmount.add(er.getExpenseAmount().multiply(rate));
         }
         Map<String, Object> result = new HashMap<>();
         result.put("total_pending_amount", totalAmount);
@@ -317,302 +222,228 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     public Object changeReimbursement(Long reimbursement_id, Long user_id,
                                       String sales_order_id, String company_name, String expense_type,
                                       Double expense_amount, String currency, Long handler, String remarks,
-                                      Instant expense_date, String shipping_number, String ship_company) {
-        ExpenseRecord expenseRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
-        if (expenseRecord == null){
-            return "Failed to find reimbursement: " + reimbursement_id;
-        }
-
-        if(!expenseRecord.getStatus().equals("pending")&&!expenseRecord.getStatus().equals("rejected")){
-            return "The reimbursement has been pended!";
-        }
+                                      Instant expense_date, String shipping_number, String ship_company,
+                                      String attachment_path, String pdf_path) {
+        ExpenseRecord er = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if (er == null) return "Failed to find reimbursement: " + reimbursement_id;
+        if (!er.getStatus().equals("pending") && !er.getStatus().equals("rejected")) return "The reimbursement has been pended!";
 
         UserTab userTab = userRepository.findById(user_id).orElse(null);
-        if(userTab == null){
-            return "User not Found!";
-        }
+        if (userTab == null) return "User not Found!";
+        if (!er.getRecorder().equals(userTab.getId()) && !userTab.getRoles().contains("ADMIN")) return "User unmatch!";
 
-        if(!expenseRecord.getRecorder().equals(userTab.getId())&&!userTab.getRoles().contains("ADMIN")){
-            return "User unmatch!";
-        }
+        er.setSalesOrderId(sales_order_id);
+        er.setCompanyName(company_name);
+        er.setExpenseType(expense_type);
+        er.setExpenseAmount(BigDecimal.valueOf(expense_amount));
+        er.setCurrency(currency);
+        er.setHandler(handler);
+        er.setRemarks(remarks);
+        er.setExpenseDate(expense_date);
+        er.setUpdatedDate(Instant.now());
+        er.setRecorder(user_id);
+        er.setStatus("pending");
+        er.setShippingNumber(shipping_number);
+        er.setShipCompany(ship_company);
+        er.setAttachmentPath(attachment_path != null ? attachment_path : "");
+        er.setPdfPath(pdf_path != null ? pdf_path : "");
 
-        expenseRecord.setSalesOrderId(sales_order_id);
-        expenseRecord.setCompanyName(company_name);
-        expenseRecord.setExpenseType(expense_type);
-        expenseRecord.setExpenseAmount(BigDecimal.valueOf(expense_amount));
-        expenseRecord.setCurrency(currency);
-        expenseRecord.setHandler(handler);
-        expenseRecord.setRemarks(remarks);
-        expenseRecord.setExpenseDate(expense_date);
-        expenseRecord.setUpdatedDate(Instant.now());
-        expenseRecord.setRecorder(user_id);
-        expenseRecord.setStatus("pending");
-
-        //快遞單相關
-        expenseRecord.setShippingNumber(shipping_number);
-        expenseRecord.setShipCompany(ship_company);
-
-        ExpenseRecord savedExpenseRecord = expenseRecordRepository.save(expenseRecord);
         Map<String, Object> result = new HashMap<>();
-        result.put("reimbursement_id",savedExpenseRecord.getId());
+        result.put("reimbursement_id", expenseRecordRepository.save(er).getId());
         return result;
     }
 
     @Override
     public Workbook exportExcel(Instant start_time, Instant end_time, String status, String company, Long user_id) {
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
-        if (authorities.stream().anyMatch(grantedAuthority
-                -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"))){
+        if (authorities.stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
             user_id = null;
         }
 
-        List<UserTab> allUSer = userRepository.findAll();
-        Map<Long, UserTab> idMapUserTab = new HashMap<>();
-        for(UserTab userTab : allUSer){
-            idMapUserTab.put(userTab.getId(),userTab);
-        }
-
+        Map<Long, UserTab> userMap = getUserMap();
         Map<String, String> statusMap = new HashMap<>();
-        statusMap.put("pending","待審核");
-        statusMap.put("approved","已通過");
-        statusMap.put("rejected","已拒絕");
-        statusMap.put("processing","處理中");
-        statusMap.put("completed","已完成");
-        List<ExpenseRecord> allExpense = expenseRecordRepository.findExpenseRecordByTimeAndCompany
-                (status, start_time, end_time, company, user_id);
-        // 创建Excel工作簿
+        statusMap.put("pending", "待審核");
+        statusMap.put("approved", "已通過");
+        statusMap.put("rejected", "已拒絕");
+        statusMap.put("processing", "處理中");
+        statusMap.put("completed", "已完成");
+
+        List<ExpenseRecord> allExpense = expenseRecordRepository.findExpenseRecordByTimeAndCompany(status, start_time, end_time, company, user_id);
+
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("報銷單");
-        // 创建标题行
-        Row headerRow = sheet.createRow(0);
-        headerRow.createCell(0).setCellValue("ID");
-        headerRow.createCell(1).setCellValue("公司名稱");
-        headerRow.createCell(2).setCellValue("費用類型");
-        headerRow.createCell(3).setCellValue("速遞單號");
-        headerRow.createCell(4).setCellValue("速遞公司");
-        headerRow.createCell(5).setCellValue("金額");
-        headerRow.createCell(6).setCellValue("幣種");
-        headerRow.createCell(7).setCellValue("報銷人");
-        headerRow.createCell(8).setCellValue("記錄人");
-        headerRow.createCell(9).setCellValue("審核狀態");
-        headerRow.createCell(10).setCellValue("費用日期");
-        headerRow.createCell(11).setCellValue("備注");
-        headerRow.createCell(12).setCellValue("更新時間");
-        headerRow.createCell(13).setCellValue("銷售訂單編號");
-        headerRow.createCell(14).setCellValue("審查評語");
-        //headerRow.createCell(12).setCellValue("附件");
+        Row header = sheet.createRow(0);
+        String[] headers = {"ID", "公司名稱", "費用類型", "速遞單號", "速遞公司", "金額", "幣種", "報銷人", "記錄人", "審核狀態", "費用日期", "備注", "更新時間", "銷售訂單編號", "審查評語"};
+        for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
 
-        // 定義圖片列的起始索引 (第10列，索引為9)
-        final int ATTACHMENT_COL_INDEX = 12;
         int rowNum = 1;
-        // 創建 CreationHelper (用於後續創建 Anchor)
-        CreationHelper helper = workbook.getCreationHelper();
-        // 一個 Sheet 只能有一個 DrawingPatriarch，先創建出來
-        Drawing<?> drawing = sheet.createDrawingPatriarch();
-
-        for(ExpenseRecord expenseRecord : allExpense){
+        for (ExpenseRecord er : allExpense) {
             Row row = sheet.createRow(rowNum++);
-            row.createCell(0).setCellValue(expenseRecord.getId());
-            row.createCell(1).setCellValue(expenseRecord.getCompanyName());
-            row.createCell(2).setCellValue(expenseRecord.getExpenseType());
-            row.createCell(3).setCellValue(expenseRecord.getShippingNumber());
-            row.createCell(4).setCellValue(expenseRecord.getShipCompany());
-            row.createCell(5).setCellValue(expenseRecord.getExpenseAmount().toString());
-            row.createCell(6).setCellValue(expenseRecord.getCurrency());
-            row.createCell(7).setCellValue(idMapUserTab.get(expenseRecord.getHandler()).getName());
-            row.createCell(8).setCellValue(idMapUserTab.get(expenseRecord.getRecorder()).getName());
-            row.createCell(9).setCellValue(statusMap.get(expenseRecord.getStatus()));
-            String expenseDate = String.valueOf(expenseRecord.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai"))).substring(0,9);
-            row.createCell(10).setCellValue(expenseDate);
-            row.createCell(11).setCellValue(expenseRecord.getRemarks());
-            row.createCell(12).setCellValue(expenseRecord.getUpdatedDate().toString());
-            row.createCell(13).setCellValue(""+expenseRecord.getSalesOrderId());
-            row.createCell(14).setCellValue(expenseRecord.getReviewComment());
-
-            /*List<Map<String, String>> imageData = imageUtil.getBase64Image(expenseRecord.getAttachmentPath(), cosConfig, cosClient);
-            int i = 0;
-            for(Map<String, String> image : imageData){
-                try {
-                    insertImageToExcel(workbook, sheet, drawing, helper, image, row.getRowNum(), ATTACHMENT_COL_INDEX + i);
-
-                    // 設置列寬，讓圖片能顯示出來 (設置為20個字符寬)
-                    sheet.setColumnWidth(ATTACHMENT_COL_INDEX + i, 30 * 256);
-                    i++;
-                }catch (Exception e){
-                    //todo: 完善報錯
-                }
-            }*/
+            row.createCell(0).setCellValue(er.getId());
+            row.createCell(1).setCellValue(er.getCompanyName());
+            row.createCell(2).setCellValue(er.getExpenseType());
+            row.createCell(3).setCellValue(er.getShippingNumber());
+            row.createCell(4).setCellValue(er.getShipCompany());
+            row.createCell(5).setCellValue(er.getExpenseAmount().toString());
+            row.createCell(6).setCellValue(er.getCurrency());
+            row.createCell(7).setCellValue(userMap.get(er.getHandler()).getName());
+            row.createCell(8).setCellValue(userMap.get(er.getRecorder()).getName());
+            row.createCell(9).setCellValue(statusMap.get(er.getStatus()));
+            String dateStr = String.valueOf(er.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai"))).substring(0, 10);
+            row.createCell(10).setCellValue(dateStr);
+            row.createCell(11).setCellValue(er.getRemarks());
+            row.createCell(12).setCellValue(er.getUpdatedDate().toString());
+            row.createCell(13).setCellValue(er.getSalesOrderId() != null ? er.getSalesOrderId() : "");
+            row.createCell(14).setCellValue(er.getReviewComment() != null ? er.getReviewComment() : "");
         }
         return workbook;
     }
 
+    // 保留舊接口（向後兼容）
     @Override
-    public Object getImage(String file_path) throws IOException{
-        return imageUtil.getBase64Image(file_path, cosConfig, cosClient);
+    public Object getImage(String file_path) throws Exception {
+        return getOldBase64Images(file_path);
+    }
+
+    @Override
+    public Object appendImage(Long reimbursement_id, MultipartFile[] file, String attachment_path) {
+        ExpenseRecord er = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if (er == null) return "Expense record not exist!";
+        String allFilePath = uploadFilesToCos(file, "image");
+        String total = mergePaths(attachment_path, allFilePath);
+        er.setAttachmentPath(total);
+        er.setUpdatedDate(Instant.now());
+        return "success " + expenseRecordRepository.save(er).getId();
     }
 
     @Override
     public Object appendPDF(Long reimbursement_id, MultipartFile[] file, String pdf_path) {
-        ExpenseRecord expenseRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
-        if(expenseRecord == null){
-            return "Expense record not exist!";
-        }
-        String allFilePath ="";
-        if (file != null) {
-            for(MultipartFile multipartFile : file){
-                if(multipartFile.isEmpty()){continue;}
-                String filePath =
-                        cosConfig.getPdfPath() +
-                                System.currentTimeMillis() + "/" +
-                                UUID.randomUUID() +
-                                Objects.requireNonNull(multipartFile.getOriginalFilename()).
-                                        substring(multipartFile.getOriginalFilename().lastIndexOf("."));
-                try{
-                    ObjectMetadata metadata = new ObjectMetadata();
-                    metadata.setContentLength(multipartFile.getSize()); // 必须设置长度，否则部分实现会回退到临时文件
-                    metadata.setContentType(multipartFile.getContentType());
-                    InputStream inputStream = multipartFile.getInputStream();
-                    cosClient.putObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() +filePath, inputStream, metadata);
-                    allFilePath+=filePath+";";
-                }catch (IOException e){
-                    throw new RuntimeException("读取上传文件失败", e);
-                }catch (NullPointerException e) {
-                    throw new RuntimeException("图片名不能为空", e);
-                }
-            }
-            allFilePath = allFilePath.substring(0,allFilePath.length()-1);
-        }
-        String total = "";
-
-        if(!allFilePath.isEmpty()&&!pdf_path.isEmpty()){
-            total = pdf_path+";"+allFilePath;
-        } else if (!allFilePath.isEmpty()) {
-            total=allFilePath;
-        }else if (!pdf_path.isEmpty()){
-            total = pdf_path;
-        }
-        expenseRecord.setPdfPath(total);
-        expenseRecord.setUpdatedDate(Instant.now());
-        return expenseRecordRepository.save(expenseRecord).getId();
+        ExpenseRecord er = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if (er == null) return "Expense record not exist!";
+        String allFilePath = uploadFilesToCos(file, "pdf");
+        String total = mergePaths(pdf_path, allFilePath);
+        er.setPdfPath(total);
+        er.setUpdatedDate(Instant.now());
+        return expenseRecordRepository.save(er).getId();
     }
 
     @Override
-    public Object getPDF(String file_path) throws IOException{
-        return pdfUtil.getBase64Pdf(file_path, cosConfig, cosClient);
+    public Object getPDF(String file_path) throws IOException {
+        return getOldBase64Pdfs(file_path);
     }
 
     @Override
     public Object searchReimbursement(String search_text, Integer page, Integer page_size, Long user_id) {
-        int offset = (page-1) * page_size;
+        int offset = (page - 1) * page_size;
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
-        if (authorities.stream().anyMatch(grantedAuthority
-                -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"))){
+        if (authorities.stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
             user_id = null;
         }
 
-        List<UserTab> allUSer = userRepository.findAll();
-        Map<Long, UserTab> idMapUserTab = new HashMap<>();
-        for(UserTab userTab : allUSer){
-            idMapUserTab.put(userTab.getId(),userTab);
-        }
-        List<UserTab> userTabList = userRepository.findAll();
-        Map<Long, UserTab> idMapUser = new HashMap<>();
-        for(UserTab userTab : userTabList){
-            idMapUser.put(userTab.getId(), userTab);
-        }
-
         Long total = expenseRecordRepository.countSearchRecord(user_id, search_text);
+        List<ExpenseRecord> list = expenseRecordRepository.searchExpenseRecordByShippingNumberAndSalesOrderId(user_id, page_size, offset, search_text);
 
-        List<ExpenseRecord> expenseRecordList = expenseRecordRepository.searchExpenseRecordByShippingNumberAndSalesOrderId(user_id,page_size,offset,search_text);
-
+        Map<Long, UserTab> userMap = getUserMap();
         Map<String, Object> result = new HashMap<>();
         result.put("total", total);
-        List<Object> reimbursements =  new ArrayList<>();
-        for (ExpenseRecord expenseRecord : expenseRecordList){
-            Map<String, Object> temp = new HashMap<>();
-            temp.put("attachmentPath", expenseRecord.getAttachmentPath());
-            temp.put("companyName", expenseRecord.getCompanyName());
-            temp.put("currency", expenseRecord.getCurrency());
-            temp.put("expenseAmount", expenseRecord.getExpenseAmount());
-            temp.put("expenseDate", expenseRecord.getExpenseDate());
-            temp.put("expenseType", expenseRecord.getExpenseType());
-            temp.put("handler", idMapUser.get(expenseRecord.getHandler()).getName());
-            temp.put("id", expenseRecord.getId());
-            temp.put("remarks", expenseRecord.getRemarks());
-            temp.put("salesOrderId", expenseRecord.getSalesOrderId());
-            temp.put("status", expenseRecord.getStatus());
-            temp.put("updatedDate", expenseRecord.getUpdatedDate());
-            temp.put("recorder", idMapUser.get(expenseRecord.getRecorder()).getName());
-            temp.put("pdfPath", expenseRecord.getPdfPath());
-            temp.put("reviewComment", expenseRecord.getReviewComment());
-            //temp.put("imageURLs", expenseRecord.getAttachmentPath());
-            if(expenseRecord.getExpenseType().contains("速遞費")){
-                temp.put("shippingNumber", expenseRecord.getShippingNumber());
-                temp.put("shippingCompany", expenseRecord.getShipCompany());
-            }
-            reimbursements.add(temp);
-        }
-        result.put("reimbursements",reimbursements);
+        result.put("reimbursements", buildReimbursementList(list, userMap));
         return result;
-
     }
 
-    private void insertImageToExcel(Workbook workbook, Sheet sheet, Drawing<?> drawing, CreationHelper helper, Map<String, String> imageData, int row, int col) throws IOException {
-        int formate = Workbook.PICTURE_TYPE_PNG;
-        if(imageData.get("contentType").equals("image/jpeg")){
-            formate = Workbook.PICTURE_TYPE_JPEG;
+    // ==================== 私有工具方法 ====================
+
+    private Map<Long, UserTab> getUserMap() {
+        Map<Long, UserTab> map = new HashMap<>();
+        for (UserTab u : userRepository.findAll()) map.put(u.getId(), u);
+        return map;
+    }
+
+    private List<Object> buildReimbursementList(List<ExpenseRecord> records, Map<Long, UserTab> userMap) {
+        List<Object> list = new ArrayList<>();
+        for (ExpenseRecord er : records) list.add(buildReimbursementMap(er, userMap));
+        return list;
+    }
+
+    private Map<String, Object> buildReimbursementMap(ExpenseRecord er, Map<Long, UserTab> userMap) {
+        Map<String, Object> temp = new HashMap<>();
+        temp.put("id", er.getId());
+        temp.put("salesOrderId", er.getSalesOrderId());
+        temp.put("companyName", er.getCompanyName());
+        temp.put("expenseType", er.getExpenseType());
+        temp.put("expenseAmount", er.getExpenseAmount());
+        temp.put("currency", er.getCurrency());
+        temp.put("handler", userMap.containsKey(er.getHandler()) ? userMap.get(er.getHandler()).getName() : "unknown");
+        temp.put("recorder", userMap.containsKey(er.getRecorder()) ? userMap.get(er.getRecorder()).getName() : "unknown");
+        temp.put("status", er.getStatus());
+        temp.put("expenseDate", er.getExpenseDate());
+        temp.put("remarks", er.getRemarks());
+        temp.put("attachmentPath", er.getAttachmentPath());
+        temp.put("pdfPath", er.getPdfPath());
+        temp.put("reviewComment", er.getReviewComment());
+        temp.put("updatedDate", er.getUpdatedDate());
+        if (er.getExpenseType() != null && er.getExpenseType().contains("速遞費")) {
+            temp.put("shippingNumber", er.getShippingNumber());
+            temp.put("shippingCompany", er.getShipCompany());
         }
+        return temp;
+    }
 
-        // 獲取 Base64 字串並解碼回原始 byte[]
-        String base64String = imageData.get("data");
-        byte[] imageBytes = Base64.getDecoder().decode(base64String);
-
-        double imgWidth = 0;
-        double imgHeight = 0;
-        ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes);
-        BufferedImage bufferedImage = ImageIO.read(bis);
-        if (bufferedImage != null) {
-            imgWidth = bufferedImage.getWidth();
-            imgHeight = bufferedImage.getHeight();
+    private String uploadFilesToCos(MultipartFile[] files, String type) {
+        if (files == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (MultipartFile f : files) {
+            if (f.isEmpty()) continue;
+            String subPath = "image".equals(type) ? cosConfig.getImagePath() : cosConfig.getPdfPath();
+            String originalName = Objects.requireNonNull(f.getOriginalFilename());
+            String ext = originalName.substring(originalName.lastIndexOf("."));
+            String filePath = subPath + System.currentTimeMillis() + "/" + UUID.randomUUID() + ext;
+            try {
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentLength(f.getSize());
+                metadata.setContentType(f.getContentType());
+                cosClient.putObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() + filePath, f.getInputStream(), metadata);
+                sb.append(filePath).append(";");
+            } catch (IOException e) {
+                throw new RuntimeException("讀取上傳文件失敗", e);
+            }
         }
+        if (sb.length() > 0) sb.setLength(sb.length() - 1);
+        return sb.toString();
+    }
 
-        // 縮小為原尺寸的 1/20
-        double scaledWidth = imgWidth;
-        double scaledHeight = imgHeight;
+    private String mergePaths(String existing, String newPath) {
+        if (newPath != null && !newPath.isEmpty() && existing != null && !existing.isEmpty())
+            return existing + ";" + newPath;
+        if (newPath != null && !newPath.isEmpty()) return newPath;
+        if (existing != null && !existing.isEmpty()) return existing;
+        return "";
+    }
 
-        // 添加圖片到 Workbook
-        int pictureIdx = workbook.addPicture(imageBytes, formate);
-
-        // 創建錨點 (設置圖片位置)
-        ClientAnchor anchor = helper.createClientAnchor();
-        anchor.setCol1(col);
-        anchor.setRow1(row);
-        anchor.setCol2(col + 1);
-        anchor.setRow2(row + 1);
-
-        // 設置錨點類型為不隨 cell 改變大小
-        anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
-
-        // 繪製圖片
-        Picture pict = drawing.createPicture(anchor, pictureIdx);
-
-        // 調整 cell 寬度以適應圖片（考慮同一列可能有多張圖片）
-        double requiredColumnWidth = (scaledWidth * 37) + 256; // 加一些 padding
-
-        if (sheet.getColumnWidth(col) < requiredColumnWidth) {
-            sheet.setColumnWidth(col, (int) requiredColumnWidth);
+    private List<Map<String, String>> getOldBase64Images(String filePath) throws IOException {
+        List<String> fileList = List.of(filePath.split(";"));
+        List<Map<String, String>> result = new ArrayList<>();
+        for (String file : fileList) {
+            byte[] bytes = cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + file);
+            Map<String, String> map = new HashMap<>();
+            map.put("fileName", file);
+            map.put("contentType", file.contains("png") ? "image/png" : "image/jpeg");
+            map.put("data", Base64.getEncoder().encodeToString(bytes));
+            result.add(map);
         }
+        return result;
+    }
 
-        // 調整 row 高度以適應圖片（考慮同一行可能有多張圖片）
-        Row currentRow = sheet.getRow(row);
-        if (currentRow == null) {
-            currentRow = sheet.createRow(row);
+    private List<Map<String, String>> getOldBase64Pdfs(String filePath) throws IOException {
+        List<String> fileList = List.of(filePath.split(";"));
+        List<Map<String, String>> result = new ArrayList<>();
+        for (String file : fileList) {
+            byte[] bytes = cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + file);
+            Map<String, String> map = new HashMap<>();
+            map.put("fileName", file);
+            map.put("contentType", "application/pdf");
+            map.put("data", Base64.getEncoder().encodeToString(bytes));
+            result.add(map);
         }
-
-        short requiredRowHeight = (short)((scaledHeight * 0.75 * 20) + 20); // 加一些 padding
-
-        if (currentRow.getHeight() < requiredRowHeight) {
-            currentRow.setHeight(requiredRowHeight);
-        }
+        return result;
     }
 }

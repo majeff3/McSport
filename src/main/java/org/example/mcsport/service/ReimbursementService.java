@@ -8,14 +8,19 @@ import java.time.Instant;
 
 public interface ReimbursementService {
 
+    // 新流程
+    Object uploadAttachment(MultipartFile file, String type);
+    Object deleteAttachment(String filePath);
+    byte[] getImageBytes(String filePath) throws IOException;
+    byte[] getPdfBytes(String filePath) throws IOException;
+
     Object addReimbursement(String sales_order_id, String company_name, String expense_type,
                             Double expense_amount, String currency, Long handler, String remarks,
-                            Instant expense_date, Long user_id, String shipping_number, String ship_company);
+                            Instant expense_date, Long user_id, String shipping_number, String ship_company,
+                            String attachment_path, String pdf_path);
 
     Object getReimbursement(Instant start_time, Instant end_time, Long user_id, Long handler,
-                            String status, Integer page, Integer page_size, String  company);
-
-    Object appendImage(Long reimbursement_id, MultipartFile[] file, String attachment_path);
+                            String status, Integer page, Integer page_size, String company);
 
     Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status, String review_comment);
 
@@ -27,11 +32,14 @@ public interface ReimbursementService {
     Object changeReimbursement(Long reimbursement_id, Long user_id,
                                String sales_order_id, String company_name, String expense_type,
                                Double expense_amount, String currency, Long handler, String remarks,
-                               Instant expense_date, String shipping_number, String ship_company);
+                               Instant expense_date, String shipping_number, String ship_company,
+                               String attachment_path, String pdf_path);
 
-    Workbook exportExcel(Instant start_time, Instant end_time, String status, String  company, Long user_id) throws Exception;
+    Workbook exportExcel(Instant start_time, Instant end_time, String status, String company, Long user_id) throws Exception;
 
     Object getImage(String file_path) throws Exception;
+
+    Object appendImage(Long reimbursement_id, MultipartFile[] file, String attachment_path);
 
     Object appendPDF(Long reimbursement_id, MultipartFile[] file, String pdf_path);
 

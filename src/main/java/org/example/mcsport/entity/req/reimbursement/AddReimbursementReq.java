@@ -19,4 +19,6 @@ public class AddReimbursementReq {
     private Instant expense_date;
     private String shipping_number;
     private String ship_company;
+    private String attachment_path;  // 圖片URL列表，分號分隔
+    private String pdf_path;         // PDF URL列表，分號分隔
 }
