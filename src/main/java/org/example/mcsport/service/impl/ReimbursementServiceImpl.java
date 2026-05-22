@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.*;
@@ -143,9 +144,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByTimeAndStatus(status, page_size, offset, start_time, end_time, company, user_id);
         Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_time, end_time, company, user_id);
 
+        BigDecimal total_amount = new BigDecimal(BigInteger.ZERO);
+        for (ExpenseRecord expenseRecord : list) {
+            total_amount = total_amount.add(expenseRecord.getExpenseAmount());
+        }
+
         Map<Long, UserTab> userMap = getUserMap();
         Map<String, Object> result = new HashMap<>();
         result.put("total", total);
+        result.put("total_amount", total_amount);
         result.put("reimbursements", buildReimbursementList(list, userMap));
         return result;
     }
