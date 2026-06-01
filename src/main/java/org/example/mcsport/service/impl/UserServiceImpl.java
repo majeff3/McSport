@@ -72,7 +72,7 @@ public class UserServiceImpl implements UserService {
         result.put("jwt", jwt);
         result.put("author_level", userTab.getRoles());
         result.put("user_name", userTab.getName());
-        result.put("user_id", userDetails.getId());
+        result.put("user_id", userTab.getId());
         return result;
     }
 
