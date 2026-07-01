@@ -49,7 +49,7 @@ public class ExpenseRecord {
     @Column(name = "remarks")
     private String remarks;
 
-    @Column(name = "attachment_path")
+    @Column(name = "attachment_path", length = 2000)
     private String attachmentPath;
 
     @ColumnDefault("current_timestamp()")
