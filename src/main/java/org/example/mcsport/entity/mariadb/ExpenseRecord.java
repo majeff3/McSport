@@ -72,7 +72,7 @@ public class ExpenseRecord {
     @Column(name = "ship_company")
     private String shipCompany;
 
-    @Column(name = "pdf_path")
+    @Column(name = "pdf_path", length = 2000)
     private String pdfPath;
 
     @Column(name = "review_comment", length = 500)

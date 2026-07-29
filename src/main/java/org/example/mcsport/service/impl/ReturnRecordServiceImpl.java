@@ -63,7 +63,7 @@ public class ReturnRecordServiceImpl implements ReturnRecordService {
         result.put("returnRecords", returnRecordsList);
         result.put("total", total);
 
-        return returnRecordsList;
+        return result;
     }
 
     @Override

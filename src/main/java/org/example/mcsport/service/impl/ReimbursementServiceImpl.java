@@ -76,6 +76,10 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                 result.put("message", "file_path is empty");
                 return result;
             }
+            if (!isSafeFilePath(filePath)) {
+                result.put("message", "invalid file_path");
+                return result;
+            }
             cosClient.deleteObject(cosConfig.getBucketName(), cosConfig.getReimbursementPath() + filePath);
             result.put("message", "success");
         } catch (Exception e) {
@@ -86,11 +90,13 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     @Override
     public byte[] getImageBytes(String filePath) throws IOException {
+        if (!isSafeFilePath(filePath)) throw new IllegalArgumentException("invalid file_path");
         return cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + filePath);
     }
 
     @Override
     public byte[] getPdfBytes(String filePath) throws IOException {
+        if (!isSafeFilePath(filePath)) throw new IllegalArgumentException("invalid file_path");
         return cosConfig.getFileByte(cosClient, cosConfig.getReimbursementPath() + filePath);
     }
 
@@ -418,6 +424,27 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         return sb.toString();
     }
 
+    /**
+     * 校驗前端傳入的文件路徑，防止路徑遍歷攻擊。
+     * 合法路徑示例: images/1234567890/uuid.jpg 或 PDFs/1234567890/uuid.pdf
+     */
+    private boolean isSafeFilePath(String filePath) {
+        if (filePath == null || filePath.isEmpty()) return false;
+        // 禁止路徑遍歷
+        if (filePath.contains("..")) return false;
+        // 禁止絕對路徑
+        if (filePath.startsWith("/")) return false;
+        // 禁止盤符 (Windows)
+        if (filePath.matches("^[A-Za-z]:.*")) return false;
+        // 多文件路徑用 ; 分隔，逐個校驗
+        for (String part : filePath.split(";")) {
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) continue;
+            if (trimmed.contains("..")) return false;
+        }
+        return true;
+    }
+
     private String mergePaths(String existing, String newPath) {
         if (newPath != null && !newPath.isEmpty() && existing != null && !existing.isEmpty())
             return existing + ";" + newPath;
@@ -427,6 +454,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     }
 
     private List<Map<String, String>> getOldBase64Images(String filePath) throws IOException {
+        if (!isSafeFilePath(filePath)) throw new IllegalArgumentException("invalid file_path");
         List<String> fileList = List.of(filePath.split(";"));
         List<Map<String, String>> result = new ArrayList<>();
         for (String file : fileList) {
@@ -441,6 +469,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     }
 
     private List<Map<String, String>> getOldBase64Pdfs(String filePath) throws IOException {
+        if (!isSafeFilePath(filePath)) throw new IllegalArgumentException("invalid file_path");
         List<String> fileList = List.of(filePath.split(";"));
         List<Map<String, String>> result = new ArrayList<>();
         for (String file : fileList) {
