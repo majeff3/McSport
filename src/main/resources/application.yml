@@ -24,7 +24,7 @@ spring:
 
     mariadb:
       #driver-class-name: org.mariadb.jdbc.MariaDbDriver
-      jdbc-url: jdbc:mariadb://113.45.219.249:3306/mc_sport
+      jdbc-url: jdbc:mariadb://localhost:3306/mc_sport
       username: remote_jeff
       password: '!IuTas@BN8ioi&dsufbER'
 
