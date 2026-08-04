@@ -78,5 +78,10 @@ public class ExpenseRecord {
     @Column(name = "review_comment", length = 500)
     private String reviewComment;
 
+    @Column(name = "child_id")
+    private Long childId;  // 子節點：指向修改後的新版本記錄 ID，NULL 表示當前最新版本
+
+    @Column(name = "parent_id")
+    private Long parentId;  // 父節點：指向修改前的舊版本記錄 ID，NULL 表示原始版本
 
 }

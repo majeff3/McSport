@@ -146,6 +146,12 @@ public class ReimbursementController {
                 req.getAttachment_path(), req.getPdf_path()));
     }
 
+    @PreAuthorize("hasRole('USER')")
+    @PostMapping("/getHistory")
+    public ResponseEntity<Object> getReimbursementHistory(@RequestBody Map<String, Long> req) {
+        return ResponseEntity.ok(reimbursementService.getReimbursementHistory(req.get("reimbursement_id")));
+    }
+
     @PostMapping("/exportExcel")
     public ResponseEntity<Object> exportExcel(@RequestBody ExportExcelReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();

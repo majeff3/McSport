@@ -132,6 +132,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         expenseRecord.setCreatedDate(Instant.now());
         expenseRecord.setShippingNumber(shipping_number);
         expenseRecord.setShipCompany(ship_company);
+        expenseRecord.setChildId(null);
+        expenseRecord.setParentId(null);
 
         ExpenseRecord saved = expenseRecordRepository.save(expenseRecord);
         result.put("reimbursement_id", saved.getId());
@@ -237,32 +239,76 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                                       Double expense_amount, String currency, Long handler, String remarks,
                                       Instant expense_date, String shipping_number, String ship_company,
                                       String attachment_path, String pdf_path) {
-        ExpenseRecord er = expenseRecordRepository.findById(reimbursement_id).orElse(null);
-        if (er == null) return "Failed to find reimbursement: " + reimbursement_id;
-        if (!er.getStatus().equals("pending") && !er.getStatus().equals("rejected")) return "The reimbursement has been pended!";
+        ExpenseRecord oldRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if (oldRecord == null) return "Failed to find reimbursement: " + reimbursement_id;
+        if (!oldRecord.getStatus().equals("pending") && !oldRecord.getStatus().equals("rejected"))
+            return "已通過或已完成的報銷單不能修改";
+        if (oldRecord.getChildId() != null && oldRecord.getChildId() != 0)
+            return "該報銷單已被修改，請修改最新版本";
 
         UserTab userTab = userRepository.findById(user_id).orElse(null);
         if (userTab == null) return "User not Found!";
-        if (!er.getRecorder().equals(userTab.getId()) && !userTab.getRoles().contains("ADMIN")) return "User unmatch!";
+        if (!oldRecord.getRecorder().equals(userTab.getId()) && !userTab.getRoles().contains("ADMIN")) return "User unmatch!";
 
-        er.setSalesOrderId(sales_order_id);
-        er.setCompanyName(company_name);
-        er.setExpenseType(expense_type);
-        er.setExpenseAmount(BigDecimal.valueOf(expense_amount));
-        er.setCurrency(currency);
-        er.setHandler(handler);
-        er.setRemarks(remarks);
-        er.setExpenseDate(expense_date);
-        er.setUpdatedDate(Instant.now());
-        er.setRecorder(user_id);
-        er.setStatus("pending");
-        er.setShippingNumber(shipping_number);
-        er.setShipCompany(ship_company);
-        er.setAttachmentPath(attachment_path != null ? attachment_path : "");
-        er.setPdfPath(pdf_path != null ? pdf_path : "");
+        // 創建新記錄，複製舊記錄的所有字段 + 應用用戶修改
+        ExpenseRecord newRecord = new ExpenseRecord();
+        newRecord.setSalesOrderId(sales_order_id);
+        newRecord.setCompanyName(company_name);
+        newRecord.setExpenseType(expense_type);
+        newRecord.setExpenseAmount(BigDecimal.valueOf(expense_amount));
+        newRecord.setCurrency(currency);
+        newRecord.setHandler(handler);
+        newRecord.setRemarks(remarks);
+        newRecord.setExpenseDate(expense_date);
+        newRecord.setUpdatedDate(Instant.now());
+        newRecord.setCreatedDate(Instant.now());
+        newRecord.setRecorder(user_id);
+        newRecord.setStatus("pending");
+        newRecord.setShippingNumber(shipping_number);
+        newRecord.setShipCompany(ship_company);
+        newRecord.setAttachmentPath(attachment_path != null ? attachment_path : "");
+        newRecord.setPdfPath(pdf_path != null ? pdf_path : "");
+        newRecord.setReviewComment(oldRecord.getReviewComment());
+        newRecord.setReviewer(oldRecord.getReviewer());
+        newRecord.setParentId(oldRecord.getId());  // 父節點指向舊版本
+
+        ExpenseRecord saved = expenseRecordRepository.save(newRecord);
+
+        // 將舊記錄的 child_id 指向新記錄
+        oldRecord.setChildId(saved.getId());
+        oldRecord.setUpdatedDate(Instant.now());
+        expenseRecordRepository.save(oldRecord);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("reimbursement_id", expenseRecordRepository.save(er).getId());
+        result.put("reimbursement_id", saved.getId());
+        return result;
+    }
+
+    @Override
+    public Object getReimbursementHistory(Long reimbursement_id) {
+        ExpenseRecord current = expenseRecordRepository.findById(reimbursement_id).orElse(null);
+        if (current == null) return Collections.emptyList();
+
+        // 沿 parent_id 反向查找所有歷史版本（從當前版本往前找父版本）
+        List<ExpenseRecord> history = new ArrayList<>();
+        history.add(current);
+        
+        Long parentId = current.getParentId();
+        while (parentId != null && parentId != 0) {
+            ExpenseRecord parent = expenseRecordRepository.findById(parentId).orElse(null);
+            if (parent == null) break;
+            history.add(parent);
+            parentId = parent.getParentId();
+        }
+
+        // 反轉：按時間從舊到新排列
+        Collections.reverse(history);
+
+        Map<Long, UserTab> userMap = getUserMap();
+        List<Object> result = new ArrayList<>();
+        for (ExpenseRecord er : history) {
+            result.add(buildReimbursementMap(er, userMap));
+        }
         return result;
     }
 
@@ -394,6 +440,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         temp.put("pdfPath", er.getPdfPath());
         temp.put("reviewComment", er.getReviewComment());
         temp.put("updatedDate", er.getUpdatedDate());
+        temp.put("childId", er.getChildId());
+        temp.put("parentId", er.getParentId());
         if (er.getExpenseType() != null && er.getExpenseType().contains("速遞費")) {
             temp.put("shippingNumber", er.getShippingNumber());
             temp.put("shippingCompany", er.getShipCompany());

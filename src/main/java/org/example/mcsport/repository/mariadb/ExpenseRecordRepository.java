@@ -17,6 +17,7 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
             " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
             " AND (:company IS NULL OR er.company_name = :company)" +
             " AND (:handler IS NULL OR er.handler = :handler) " +
+            " AND (er.child_id IS NULL OR er.child_id = 0) " +
             " ORDER BY er.created_date DESC" +
             " LIMIT :page_size OFFSET :offset; ")
     List<ExpenseRecord> findExpenseRecordByTimeAndStatus(@Param("status") String status,
@@ -34,6 +35,7 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
             " WHERE er.handler = :handler " +
             " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
             " AND (:status IS NULL OR er.status=:status) " +
+            " AND (er.child_id IS NULL OR er.child_id = 0) " +
             " ORDER BY er.expense_date DESC " +
             " LIMIT :page_size OFFSET :offset; ")
     List<ExpenseRecord> findExpenseRecordByHandlerWithTime(@Param("handler") Long handler,
@@ -48,7 +50,8 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
                     " WHERE (er.status = :status OR :status IS NULL) " +
                     " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
                     " AND (:company IS NULL OR er.company_name = :company)" +
-                    " AND (:handler IS NULL OR er.handler = :handler);")
+                    " AND (:handler IS NULL OR er.handler = :handler)" +
+                    " AND (er.child_id IS NULL OR er.child_id = 0);")
     Long countAllByStatusAndExpenseDateBetween(@Param("status") String status,
                                                @Param("start_time") Instant start_time,
                                                @Param("end_time") Instant end_time,
@@ -57,7 +60,8 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
 
     @Query(nativeQuery = true, value =
             " SELECT SUM(er.expense_amount) FROM expense_records AS er " +
-            " WHERE er.status = 'pending'; ")
+            " WHERE er.status = 'pending' " +
+            " AND (er.child_id IS NULL OR er.child_id = 0); ")
     Double sumAllExpenseAmountByStatus();
 
     @Query(nativeQuery = true, value =
@@ -65,19 +69,25 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
             " WHERE (er.status = :status OR :status IS NULL) " +
             " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
             " AND (:handler IS NULL OR er.handler = :handler)" +
-            " AND (:company IS NULL OR er.company_name = :company); ")
+            " AND (:company IS NULL OR er.company_name = :company)" +
+            " AND (er.child_id IS NULL OR er.child_id = 0); ")
     List<ExpenseRecord> findExpenseRecordByTimeAndCompany(@Param("status") String status,
                                                           @Param("start_time") Instant start_time,
                                                           @Param("end_time") Instant end_time,
                                                           @Param("company") String company,
                                                           @Param("handler") Long user_id);
 
-    List<ExpenseRecord> findAllByStatus(String status);
+    @Query(nativeQuery = true, value =
+            " SELECT * FROM expense_records AS er " +
+            " WHERE er.status = :status " +
+            " AND (er.child_id IS NULL OR er.child_id = 0) ")
+    List<ExpenseRecord> findAllByStatus(@Param("status") String status);
 
     @Query(nativeQuery = true, value =
             " SELECT * FROM expense_records AS er " +
             " WHERE MATCH(shipping_number, sales_order_id) AGAINST (:search_text) " +
             " AND (:handler IS NULL OR er.handler = :handler) " +
+            " AND (er.child_id IS NULL OR er.child_id = 0) " +
             " ORDER BY er.created_date DESC" +
             " LIMIT :page_size OFFSET :offset; ")
     List<ExpenseRecord> searchExpenseRecordByShippingNumberAndSalesOrderId(@Param("handler") Long handler,
@@ -88,7 +98,8 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
     @Query(nativeQuery = true, value =
             " SELECT count(*) FROM expense_records AS er " +
             " WHERE MATCH(shipping_number, sales_order_id) AGAINST (:search_text) " +
-            " AND (:handler IS NULL OR er.handler = :handler) ")
+            " AND (:handler IS NULL OR er.handler = :handler) " +
+            " AND (er.child_id IS NULL OR er.child_id = 0) ")
     Long countSearchRecord(@Param("handler") Long handler,
                            @Param("search_text") String search_text);
 

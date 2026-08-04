@@ -46,4 +46,6 @@ public interface ReimbursementService {
     Object getPDF(String file_path) throws IOException;
 
     Object searchReimbursement(String search_text, Integer page, Integer page_size, Long user_id);
+
+    Object getReimbursementHistory(Long reimbursement_id);
 }

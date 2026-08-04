@@ -20,7 +20,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-//当没有授权的请求进来时就会调这个类
 @Component
 public class AuthTokenFilter extends OncePerRequestFilter {
 
@@ -41,12 +40,10 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         try {
             String jwt = parseJwt(request);
 
-
             if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
                 String userName = jwtUtils.getUsernameFromJwtToken(jwt);
 
-                //UserDetails 由 UserTab 构建
-                UserDetails userDetails = userDetailsService.loadUserByUsername(userName);//userName
+                UserDetails userDetails = userDetailsService.loadUserByUsername(userName);
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
                                 userDetails,
@@ -60,7 +57,6 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                 if (cachedToken != null && cachedToken.equals(jwt)) {
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 } else {
-                    // Token 不存在或不匹配（說明該賬號在別處登錄了，Redis存了新的Token）
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.getWriter().write("帳號已在其他設備登錄，您已被強制下線");
                     return;
