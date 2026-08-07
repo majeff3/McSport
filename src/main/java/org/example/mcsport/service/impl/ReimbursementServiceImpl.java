@@ -142,15 +142,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     @Override
     public Object getReimbursement(Instant start_time, Instant end_time, Long user_id, Long handler,
-                                   String status, Integer page, Integer page_size, String company) {
+                                   String status, Integer page, Integer page_size, String company, String expense_type) {
         int offset = (page - 1) * page_size;
         Collection<? extends GrantedAuthority> authorities = SecurityContextHolder.getContext().getAuthentication().getAuthorities();
         if (authorities.stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
             user_id = handler;
         }
 
-        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByTimeAndStatus(status, page_size, offset, start_time, end_time, company, user_id);
-        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_time, end_time, company, user_id);
+        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByTimeAndStatus(status, page_size, offset, start_time, end_time, company, user_id, expense_type);
+        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_time, end_time, company, user_id, expense_type);
 
         BigDecimal total_amount = new BigDecimal(BigInteger.ZERO);
         for (ExpenseRecord expenseRecord : list) {
@@ -186,10 +186,10 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     @Override
     public Object getReimbursementByUser(Long user_id, Instant start_date, Instant end_date,
-                                         Integer page, Integer page_size, String status) {
+                                         Integer page, Integer page_size, String status, String expense_type, String company) {
         int offset = (page - 1) * page_size;
-        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByHandlerWithTime(user_id, start_date, end_date, page_size, offset, status);
-        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_date, end_date, null, user_id);
+        List<ExpenseRecord> list = expenseRecordRepository.findExpenseRecordByHandlerWithTime(user_id, start_date, end_date, page_size, offset, status, expense_type, company);
+        Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_date, end_date, company, user_id, expense_type);
 
         BigDecimal totalMOP = BigDecimal.ZERO, totalCNY = BigDecimal.ZERO, totalHKD = BigDecimal.ZERO, totalUSD = BigDecimal.ZERO;
         Map<Long, UserTab> userMap = getUserMap();

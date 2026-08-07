@@ -13,6 +13,7 @@ public class GetReimbursementReq {
     private String status;
     private String company;
     private Long handler;
+    private String expense_type;
     private Integer page;
     private Integer page_size;
 }

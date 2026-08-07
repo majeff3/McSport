@@ -70,7 +70,7 @@ public class ReimbursementController {
     public ResponseEntity<Object> getReimbursement(@RequestBody GetReimbursementReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
         return ResponseEntity.ok(reimbursementService.getReimbursement(req.getStart_time(), req.getEnd_time(),
-                user_id, req.getHandler(), req.getStatus(), req.getPage(), req.getPage_size(), req.getCompany()));
+                user_id, req.getHandler(), req.getStatus(), req.getPage(), req.getPage_size(), req.getCompany(), req.getExpense_type()));
     }
 
     @PreAuthorize("hasRole('USER')")
@@ -125,7 +125,7 @@ public class ReimbursementController {
     public ResponseEntity<Object> getReimbursementByUser(@RequestBody GetReimbursementByUserReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
         return ResponseEntity.ok(reimbursementService.getReimbursementByUser(
-                user_id, req.getStart_date(), req.getEnd_date(), req.getPage(), req.getPage_size(), req.getStatus()));
+                user_id, req.getStart_date(), req.getEnd_date(), req.getPage(), req.getPage_size(), req.getStatus(), req.getExpense_type(), req.getCompany()));
     }
 
     @PreAuthorize("hasRole('ADMIN')")

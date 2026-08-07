@@ -20,12 +20,12 @@ public interface ReimbursementService {
                             String attachment_path, String pdf_path);
 
     Object getReimbursement(Instant start_time, Instant end_time, Long user_id, Long handler,
-                            String status, Integer page, Integer page_size, String company);
+                            String status, Integer page, Integer page_size, String company, String expense_type);
 
     Object changeReimbursementStatus(Long reimbursement_id, String user_name, String status, String review_comment);
 
     Object getReimbursementByUser(Long user_id, Instant start_date, Instant end_date,
-                                  Integer page, Integer page_size, String status);
+                                  Integer page, Integer page_size, String status, String expense_type, String company);
 
     Object countAllPending();
 

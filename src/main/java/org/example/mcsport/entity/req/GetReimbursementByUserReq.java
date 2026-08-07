@@ -14,4 +14,6 @@ public class GetReimbursementByUserReq {
     private Integer page;
     private Integer page_size;
     private String status;
+    private String expense_type;
+    private String company;
 }

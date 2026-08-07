@@ -17,6 +17,8 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
             " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
             " AND (:company IS NULL OR er.company_name = :company)" +
             " AND (:handler IS NULL OR er.handler = :handler) " +
+            " AND (:expense_type IS NULL OR er.expense_type = :expense_type" +
+            "  OR (:expense_type IS NOT NULL AND er.expense_type LIKE CONCAT(:expense_type, '-%'))) " +
             " AND (er.child_id IS NULL OR er.child_id = 0) " +
             " ORDER BY er.created_date DESC" +
             " LIMIT :page_size OFFSET :offset; ")
@@ -26,7 +28,8 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
                                                          @Param("start_time") Instant start_time,
                                                          @Param("end_time") Instant end_time,
                                                          @Param("company") String company,
-                                                         @Param("handler") Long handler);
+                                                         @Param("handler") Long handler,
+                                                         @Param("expense_type") String expense_type);
 
     ExpenseRecord findExpenseRecordById(Long id);
 
@@ -35,6 +38,9 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
             " WHERE er.handler = :handler " +
             " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
             " AND (:status IS NULL OR er.status=:status) " +
+            " AND (:expense_type IS NULL OR er.expense_type = :expense_type" +
+            "  OR (:expense_type IS NOT NULL AND er.expense_type LIKE CONCAT(:expense_type, '-%'))) " +
+            " AND (:company IS NULL OR er.company_name = :company) " +
             " AND (er.child_id IS NULL OR er.child_id = 0) " +
             " ORDER BY er.expense_date DESC " +
             " LIMIT :page_size OFFSET :offset; ")
@@ -43,7 +49,9 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
                                                            @Param("end_time") Instant end_time,
                                                            @Param("page_size") int page_size,
                                                            @Param("offset") int offset,
-                                                           @Param("status") String status);
+                                                           @Param("status") String status,
+                                                           @Param("expense_type") String expense_type,
+                                                           @Param("company") String company);
 
     @Query(nativeQuery = true, value =
             " SELECT count(*) FROM expense_records AS er " +
@@ -51,12 +59,15 @@ public interface ExpenseRecordRepository extends JpaRepository<ExpenseRecord, Lo
                     " AND (:start_time IS NULL OR er.expense_date BETWEEN :start_time AND :end_time) " +
                     " AND (:company IS NULL OR er.company_name = :company)" +
                     " AND (:handler IS NULL OR er.handler = :handler)" +
+                    " AND (:expense_type IS NULL OR er.expense_type = :expense_type" +
+                    "  OR (:expense_type IS NOT NULL AND er.expense_type LIKE CONCAT(:expense_type, '-%')))" +
                     " AND (er.child_id IS NULL OR er.child_id = 0);")
     Long countAllByStatusAndExpenseDateBetween(@Param("status") String status,
                                                @Param("start_time") Instant start_time,
                                                @Param("end_time") Instant end_time,
                                                @Param("company") String company,
-                                               @Param("handler") Long handler);
+                                               @Param("handler") Long handler,
+                                               @Param("expense_type") String expense_type);
 
     @Query(nativeQuery = true, value =
             " SELECT SUM(er.expense_amount) FROM expense_records AS er " +
