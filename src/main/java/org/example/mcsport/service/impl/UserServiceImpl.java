@@ -7,6 +7,7 @@ import org.example.mcsport.service.UserService;
 import org.example.mcsport.service.impl.jwt.UserDetailsImpl;
 import org.example.mcsport.util.jwt.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.relational.core.sql.In;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -76,16 +77,22 @@ public class UserServiceImpl implements UserService {
         return result;
     }
 
+    @Value("${app.register.user-code:1368}")
+    private String userRegisterCode;
+
+    @Value("${app.register.admin-code:Jane&Antony}")
+    private String adminRegisterCode;
+
     @Override
     public Object register(String save_code, String user_name, String password) {
         Map<String, Object> result = new HashMap<>();
-        if(!save_code.equals("1368")&&!save_code.equals("Jane&Antony")){
+        if(!save_code.equals(userRegisterCode) && !save_code.equals(adminRegisterCode)){
             result.put("msg","Fail to register");
             return result;
         }
         UserTab userTab = new UserTab();
         userTab.setName(user_name);
-        if(save_code.equals("Jane&Antony")) {
+        if(save_code.equals(adminRegisterCode)) {
             userTab.setRoles("ADMIN,USER");
         } else {
             userTab.setRoles("USER");

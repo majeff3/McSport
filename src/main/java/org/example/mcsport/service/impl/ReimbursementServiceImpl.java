@@ -411,6 +411,17 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     // ==================== 私有工具方法 ====================
 
+    /**
+     * 校驗文件路徑，防止路徑遍歷攻擊
+     */
+    private boolean isSafeFilePath(String filePath) {
+        if (filePath == null || filePath.isEmpty()) return false;
+        if (filePath.contains("..")) return false;
+        if (filePath.startsWith("/")) return false;
+        if (filePath.contains("\\")) return false;
+        return true;
+    }
+
     private Map<Long, UserTab> getUserMap() {
         Map<Long, UserTab> map = new HashMap<>();
         for (UserTab u : userRepository.findAll()) map.put(u.getId(), u);

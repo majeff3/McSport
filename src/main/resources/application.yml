@@ -96,8 +96,8 @@ server:
 
 cos:
   common:
-    secretId: AKID35uVfeQxPhmdGgv1yiHfpMhpiNr9ymUA
-    secretKey: a0HOJnsnY8fFm7JYlndJlz2ua4KPHzUo
+    secretId: ${COS_SECRET_ID}
+    secretKey: ${COS_SECRET_KEY}
     bucketName: mc-sports-bucket-1400106610
     region: ap-guangzhou
     reimbursementPath: reimbursement_system/

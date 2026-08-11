@@ -66,6 +66,7 @@ public class ReimbursementController {
                 req.getAttachment_path(), req.getPdf_path()));
     }
 
+    @PreAuthorize("hasRole('USER')")
     @PostMapping("/getReimbursement")
     public ResponseEntity<Object> getReimbursement(@RequestBody GetReimbursementReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
@@ -83,6 +84,7 @@ public class ReimbursementController {
     /**
      * 獲取圖片附件（返回原始 byte，非 base64）
      */
+    @PreAuthorize("hasRole('USER')")
     @PostMapping("/getImage")
     public ResponseEntity<Object> getImage(@RequestBody GetImageReq req) {
         try {
@@ -100,6 +102,7 @@ public class ReimbursementController {
     /**
      * 獲取 PDF 附件（返回原始 byte，非 base64）
      */
+    @PreAuthorize("hasRole('USER')")
     @PostMapping("/getPDF")
     public ResponseEntity<Object> getPDF(@RequestBody GetPdfReq req) {
         try {
@@ -121,6 +124,7 @@ public class ReimbursementController {
                 req.getReimbursement_id(), user_name, req.getStatus(), req.getReview_comment()));
     }
 
+    @PreAuthorize("hasRole('USER')")
     @PostMapping("/getReimbursementByUser")
     public ResponseEntity<Object> getReimbursementByUser(@RequestBody GetReimbursementByUserReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
@@ -152,6 +156,7 @@ public class ReimbursementController {
         return ResponseEntity.ok(reimbursementService.getReimbursementHistory(req.get("reimbursement_id")));
     }
 
+    @PreAuthorize("hasRole('USER')")
     @PostMapping("/exportExcel")
     public ResponseEntity<Object> exportExcel(@RequestBody ExportExcelReq req) {
         Long user_id = ((UserDetailsImpl) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getId();
