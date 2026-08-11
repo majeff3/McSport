@@ -157,7 +157,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             total_amount = total_amount.add(expenseRecord.getExpenseAmount());
         }
 
-        Map<Long, UserTab> userMap = getUserMap();
+        Map<Long, UserTab> userMap = getUserMapForRecords(list);
         Map<String, Object> result = new HashMap<>();
         result.put("total", total);
         result.put("total_amount", total_amount);
@@ -192,7 +192,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         Long total = expenseRecordRepository.countAllByStatusAndExpenseDateBetween(status, start_date, end_date, company, user_id, expense_type);
 
         BigDecimal totalMOP = BigDecimal.ZERO, totalCNY = BigDecimal.ZERO, totalHKD = BigDecimal.ZERO, totalUSD = BigDecimal.ZERO;
-        Map<Long, UserTab> userMap = getUserMap();
+        Map<Long, UserTab> userMap = getUserMapForRecords(list);
 
         List<Object> reimbursements = new ArrayList<>();
         for (ExpenseRecord er : list) {
@@ -319,15 +319,15 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             user_id = null;
         }
 
-        Map<Long, UserTab> userMap = getUserMap();
+        List<ExpenseRecord> allExpense = expenseRecordRepository.findExpenseRecordByTimeAndCompany(status, start_time, end_time, company, user_id);
+
+        Map<Long, UserTab> userMap = getUserMapForRecords(allExpense);
         Map<String, String> statusMap = new HashMap<>();
         statusMap.put("pending", "待審核");
         statusMap.put("approved", "已通過");
         statusMap.put("rejected", "已拒絕");
         statusMap.put("processing", "處理中");
         statusMap.put("completed", "已完成");
-
-        List<ExpenseRecord> allExpense = expenseRecordRepository.findExpenseRecordByTimeAndCompany(status, start_time, end_time, company, user_id);
 
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("報銷單");
@@ -345,8 +345,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
             row.createCell(4).setCellValue(er.getShipCompany());
             row.createCell(5).setCellValue(er.getExpenseAmount().toString());
             row.createCell(6).setCellValue(er.getCurrency());
-            row.createCell(7).setCellValue(userMap.get(er.getHandler()).getName());
-            row.createCell(8).setCellValue(userMap.get(er.getRecorder()).getName());
+            row.createCell(7).setCellValue(userMap.containsKey(er.getHandler()) ? userMap.get(er.getHandler()).getName() : "unknown");
+            row.createCell(8).setCellValue(userMap.containsKey(er.getRecorder()) ? userMap.get(er.getRecorder()).getName() : "unknown");
             row.createCell(9).setCellValue(statusMap.get(er.getStatus()));
             String dateStr = String.valueOf(er.getExpenseDate().atZone(ZoneId.of("Asia/Shanghai"))).substring(0, 10);
             row.createCell(10).setCellValue(dateStr);
@@ -402,7 +402,7 @@ public class ReimbursementServiceImpl implements ReimbursementService {
         Long total = expenseRecordRepository.countSearchRecord(user_id, search_text);
         List<ExpenseRecord> list = expenseRecordRepository.searchExpenseRecordByShippingNumberAndSalesOrderId(user_id, page_size, offset, search_text);
 
-        Map<Long, UserTab> userMap = getUserMap();
+        Map<Long, UserTab> userMap = getUserMapForRecords(list);
         Map<String, Object> result = new HashMap<>();
         result.put("total", total);
         result.put("reimbursements", buildReimbursementList(list, userMap));
@@ -411,20 +411,24 @@ public class ReimbursementServiceImpl implements ReimbursementService {
 
     // ==================== 私有工具方法 ====================
 
-    /**
-     * 校驗文件路徑，防止路徑遍歷攻擊
-     */
-    private boolean isSafeFilePath(String filePath) {
-        if (filePath == null || filePath.isEmpty()) return false;
-        if (filePath.contains("..")) return false;
-        if (filePath.startsWith("/")) return false;
-        if (filePath.contains("\\")) return false;
-        return true;
-    }
-
     private Map<Long, UserTab> getUserMap() {
         Map<Long, UserTab> map = new HashMap<>();
         for (UserTab u : userRepository.findAll()) map.put(u.getId(), u);
+        return map;
+    }
+
+    /**
+     * 只查詢需要的用戶，避免全表掃描
+     */
+    private Map<Long, UserTab> getUserMapForRecords(List<ExpenseRecord> records) {
+        Set<Long> ids = new HashSet<>();
+        for (ExpenseRecord er : records) {
+            if (er.getHandler() != null) ids.add(er.getHandler());
+            if (er.getRecorder() != null) ids.add(er.getRecorder());
+        }
+        Map<Long, UserTab> map = new HashMap<>();
+        if (ids.isEmpty()) return map;
+        for (UserTab u : userRepository.findAllById(ids)) map.put(u.getId(), u);
         return map;
     }
 

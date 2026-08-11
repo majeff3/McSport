@@ -35,7 +35,11 @@ public class FinanceServiceImpl implements FinanceService {
         int offset = (page-1) * page_size;
         List<Customer> allCustomer = customerRepository.findCustomerByFilter(contact_number, customer_name,
                 start_time, end_time, page_size, offset);
-        return allCustomer;
+        long total = customerRepository.countCustomerByFilter(contact_number, customer_name, start_time, end_time);
+        Map<String, Object> result = new HashMap<>();
+        result.put("customers", allCustomer);
+        result.put("total", total);
+        return result;
     }
 
     @Override
