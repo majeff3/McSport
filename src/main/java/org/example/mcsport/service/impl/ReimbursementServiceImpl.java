@@ -37,6 +37,21 @@ public class ReimbursementServiceImpl implements ReimbursementService {
     @Resource
     private UserRepository userRepository;
 
+    /** 銷售訂單編號最大長度，須與 expense_records.sales_order_id 的 varchar 長度一致 */
+    private static final int SALES_ORDER_ID_MAX_LENGTH = 255;
+
+    /**
+     * 校驗銷售訂單編號長度。返回 null 表示通過，否則返回錯誤訊息。
+     * 避免超長字串觸發 DB "Data too long for column" 導致整個請求 500。
+     */
+    private String validateSalesOrderId(String sales_order_id) {
+        if (sales_order_id != null && sales_order_id.length() > SALES_ORDER_ID_MAX_LENGTH) {
+            return "銷售訂單編號長度不能超過 " + SALES_ORDER_ID_MAX_LENGTH + " 個字符（當前 "
+                    + sales_order_id.length() + " 個字符）";
+        }
+        return null;
+    }
+
     // ==================== 新流程：上傳/刪除附件 ====================
 
     @Override
@@ -109,6 +124,12 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                                    String attachment_path, String pdf_path) {
 
         Map<String, Object> result = new HashMap<>();
+        String salesOrderIdError = validateSalesOrderId(sales_order_id);
+        if (salesOrderIdError != null) {
+            result.put("message", salesOrderIdError);
+            return result;
+        }
+
         if (shipping_number != null && !shipping_number.isEmpty()
                 && expenseRecordRepository.existsExpenseRecordByShippingNumber(shipping_number)) {
             result.put("message", "Shipping number already exists");
@@ -241,6 +262,8 @@ public class ReimbursementServiceImpl implements ReimbursementService {
                                       String attachment_path, String pdf_path) {
         ExpenseRecord oldRecord = expenseRecordRepository.findById(reimbursement_id).orElse(null);
         if (oldRecord == null) return "Failed to find reimbursement: " + reimbursement_id;
+        String salesOrderIdError = validateSalesOrderId(sales_order_id);
+        if (salesOrderIdError != null) return salesOrderIdError;
         if (!oldRecord.getStatus().equals("pending") && !oldRecord.getStatus().equals("rejected"))
             return "已通過或已完成的報銷單不能修改";
         if (oldRecord.getChildId() != null && oldRecord.getChildId() != 0)

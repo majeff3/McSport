@@ -18,7 +18,7 @@ public class ExpenseRecord {
     @Column(name = "id", nullable = false)
     private Long id;
 
-    @Column(name = "sales_order_id", length = 50)
+    @Column(name = "sales_order_id", length = 255)
     private String salesOrderId;
 
     @Column(name = "company_name", nullable = false, length = 100)
